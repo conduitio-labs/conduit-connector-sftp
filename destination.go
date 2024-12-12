@@ -31,32 +31,25 @@ type Destination struct {
 }
 
 func NewDestination() sdk.Destination {
-	// Create Destination and wrap it in the default middleware.
 	return sdk.DestinationWithMiddleware(&Destination{}, sdk.DefaultDestinationMiddleware()...)
 }
 
 func (d *Destination) Parameters() commonsConfig.Parameters {
-	// Parameters is a map of named Parameters that describe how to configure
-	// the Destination. Parameters can be generated from DestinationConfig with
-	// paramgen.
 	return d.config.Parameters()
 }
 
 func (d *Destination) Configure(ctx context.Context, cfg commonsConfig.Config) error {
-	// Configure is the first function to be called in a connector. It provides
-	// the connector with the configuration that can be validated and stored.
-	// In case the configuration is not valid it should return an error.
-	// Testing if your connector can reach the configured data source should be
-	// done in Open, not in Configure.
-	// The SDK will validate the configuration and populate default values
-	// before calling Configure. If you need to do more complex validations you
-	// can do them manually here.
-
 	sdk.Logger(ctx).Info().Msg("Configuring Destination...")
 	err := sdk.Util.ParseConfig(ctx, cfg, &d.config, NewDestination().Parameters())
 	if err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
+
+	err = d.config.Validate()
+	if err != nil {
+		return fmt.Errorf("error validating configuration: %w", err)
+	}
+
 	return nil
 }
 

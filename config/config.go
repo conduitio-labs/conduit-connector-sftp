@@ -31,7 +31,7 @@ type Config struct {
 	// Password is the SFTP password. (required with username and not required when using ssh key)
 	Password string `json:"password"`
 	// PrivateKeyPath is the private key for ssh login.
-	PrivateKeyPath string `json:"private_key_path"`
+	PrivateKeyPath string `json:"privateKeyPath"`
 }
 
 // Validate is used for custom validation for sftp authentication configuration.

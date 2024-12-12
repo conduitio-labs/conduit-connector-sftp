@@ -11,7 +11,7 @@ const (
 	ConfigHost           = "host"
 	ConfigPassword       = "password"
 	ConfigPort           = "port"
-	ConfigPrivateKeyPath = "private_key_path"
+	ConfigPrivateKeyPath = "privateKeyPath"
 	ConfigUsername       = "username"
 )
 
