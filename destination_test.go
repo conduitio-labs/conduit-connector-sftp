@@ -18,13 +18,13 @@ import (
 	"context"
 	"testing"
 
-	connectorname "github.com/conduitio/conduit-connector-connectorname"
+	sftp "github.com/conduitio-labs/conduit-connector-sftp"
 	"github.com/matryer/is"
 )
 
 func TestTeardown_NoOpen(t *testing.T) {
 	is := is.New(t)
-	con := connectorname.NewDestination()
+	con := sftp.NewDestination()
 	err := con.Teardown(context.Background())
 	is.NoErr(err)
 }

@@ -15,10 +15,10 @@
 package main
 
 import (
-	connectorname "github.com/conduitio/conduit-connector-connectorname"
+	sftp "github.com/conduitio-labs/conduit-connector-sftp"
 	sdk "github.com/conduitio/conduit-connector-sdk"
 )
 
 func main() {
-	sdk.Serve(connectorname.Connector)
+	sdk.Serve(sftp.Connector)
 }

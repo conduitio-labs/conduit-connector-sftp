@@ -14,13 +14,12 @@
 
 package sftp
 
-//go:generate paramgen -output=paramgen_dest.go DestinationConfig
-
 import (
 	"context"
 	"fmt"
 
-	"github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio-labs/conduit-connector-sftp/config"
+	commonsConfig "github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
 )
@@ -28,14 +27,7 @@ import (
 type Destination struct {
 	sdk.UnimplementedDestination
 
-	config DestinationConfig
-}
-
-type DestinationConfig struct {
-	// Config includes parameters that are the same in the source and destination.
-	Config
-	// DestinationConfigParam must be either yes or no (defaults to yes).
-	DestinationConfigParam string `validate:"inclusion=yes|no" default:"yes"`
+	config config.Config
 }
 
 func NewDestination() sdk.Destination {
@@ -43,14 +35,14 @@ func NewDestination() sdk.Destination {
 	return sdk.DestinationWithMiddleware(&Destination{}, sdk.DefaultDestinationMiddleware()...)
 }
 
-func (d *Destination) Parameters() config.Parameters {
+func (d *Destination) Parameters() commonsConfig.Parameters {
 	// Parameters is a map of named Parameters that describe how to configure
 	// the Destination. Parameters can be generated from DestinationConfig with
 	// paramgen.
 	return d.config.Parameters()
 }
 
-func (d *Destination) Configure(ctx context.Context, cfg config.Config) error {
+func (d *Destination) Configure(ctx context.Context, cfg commonsConfig.Config) error {
 	// Configure is the first function to be called in a connector. It provides
 	// the connector with the configuration that can be validated and stored.
 	// In case the configuration is not valid it should return an error.

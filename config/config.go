@@ -12,13 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sftp
+//go:generate paramgen -output=paramgen.go Config
 
-// Config contains shared config parameters, common to the source and
-// destination. If you don't need shared parameters you can entirely remove this
-// file.
+package config
+
+// Config contains shared config parameters, common to the source and destination.
 type Config struct {
-	// GlobalConfigParam is named global_config_param_name and needs to be
-	// provided by the user.
-	GlobalConfigParam string `json:"global_config_param_name" validate:"required"`
+	// Host is the host of the sftp server to connect.
+	Host string `json:"host" validate:"required"`
+	// Port is the port of the sftp server to connect.
+	Port string `json:"port" default:"22"`
+	// User is the SFTP user.
+	User string `json:"user"`
+	// Password is the SFTP password.
+	Password string `json:"password"`
 }
