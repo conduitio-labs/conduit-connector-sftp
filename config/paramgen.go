@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	ConfigHost     = "host"
-	ConfigPassword = "password"
-	ConfigPort     = "port"
-	ConfigUser     = "user"
+	ConfigHost           = "host"
+	ConfigPassword       = "password"
+	ConfigPort           = "port"
+	ConfigPrivateKeyPath = "private_key_path"
+	ConfigUsername       = "username"
 )
 
 func (Config) Parameters() map[string]config.Parameter {
@@ -26,7 +27,7 @@ func (Config) Parameters() map[string]config.Parameter {
 		},
 		ConfigPassword: {
 			Default:     "",
-			Description: "Password is the SFTP password.",
+			Description: "Password is the SFTP password. (required with username and not required when using ssh key)",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
 		},
@@ -36,9 +37,15 @@ func (Config) Parameters() map[string]config.Parameter {
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
 		},
-		ConfigUser: {
+		ConfigPrivateKeyPath: {
 			Default:     "",
-			Description: "User is the SFTP user.",
+			Description: "PrivateKeyPath is the private key for ssh login.",
+			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{},
+		},
+		ConfigUsername: {
+			Default:     "",
+			Description: "User is the SFTP user. (required with password and not required when using ssh key)",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
 		},

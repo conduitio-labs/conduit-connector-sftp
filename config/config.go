@@ -16,14 +16,37 @@
 
 package config
 
+import (
+	"fmt"
+)
+
 // Config contains shared config parameters, common to the source and destination.
 type Config struct {
 	// Host is the host of the sftp server to connect.
 	Host string `json:"host" validate:"required"`
 	// Port is the port of the sftp server to connect.
 	Port string `json:"port" default:"22"`
-	// User is the SFTP user.
-	User string `json:"user"`
-	// Password is the SFTP password.
+	// User is the SFTP user. (required with password and not required when using ssh key)
+	Username string `json:"username"`
+	// Password is the SFTP password. (required with username and not required when using ssh key)
 	Password string `json:"password"`
+	// PrivateKeyPath is the private key for ssh login.
+	PrivateKeyPath string `json:"private_key_path"`
+}
+
+// Validate is used for custom validation for sftp authentication configuration.
+func (c *Config) Validate() error {
+	if c.Username != "" && c.Password == "" {
+		return fmt.Errorf("%w value is required if %w is provided", ConfigPassword, ConfigUsername)
+	}
+
+	if c.Password != "" && c.Username == "" {
+		return fmt.Errorf("%w value is required if %w is provided", ConfigUsername, ConfigPassword)
+	}
+
+	if c.Username == "" && c.Password == "" && c.PrivateKeyPath == "" {
+		return fmt.Errorf("please provide %w and %w or %w for sftp authentication", ConfigUsername, ConfigPassword, ConfigPrivateKeyPath)
+	}
+
+	return nil
 }
