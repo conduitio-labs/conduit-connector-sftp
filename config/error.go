@@ -18,8 +18,6 @@ import (
 	"fmt"
 )
 
-var ErrAuthRequired = fmt.Errorf("please provide %q and %q or %q for sftp authentication", ConfigUsername, ConfigPassword, ConfigPrivateKeyPath)
-
 type RequiredWithError struct {
 	field     string
 	withField string

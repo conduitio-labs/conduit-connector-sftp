@@ -9,6 +9,8 @@ import (
 
 const (
 	ConfigAddress        = "address"
+	ConfigDirectoryPath  = "directoryPath"
+	ConfigPassphrase     = "passphrase"
 	ConfigPassword       = "password"
 	ConfigPrivateKeyPath = "privateKeyPath"
 	ConfigUsername       = "username"
@@ -24,9 +26,23 @@ func (Config) Parameters() map[string]config.Parameter {
 				config.ValidationRequired{},
 			},
 		},
+		ConfigDirectoryPath: {
+			Default:     "",
+			Description: "DirectoryPath is the path to the directory to read/write data.",
+			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{
+				config.ValidationRequired{},
+			},
+		},
+		ConfigPassphrase: {
+			Default:     "",
+			Description: "Passphrase is required if private key is protected with passphrase.",
+			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{},
+		},
 		ConfigPassword: {
 			Default:     "",
-			Description: "Password is the SFTP password (required with username and not required when using ssh key).",
+			Description: "Password is the SFTP password (required with username).",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
 		},
@@ -38,9 +54,11 @@ func (Config) Parameters() map[string]config.Parameter {
 		},
 		ConfigUsername: {
 			Default:     "",
-			Description: "User is the SFTP user (required with password and not required when using ssh key).",
+			Description: "User is the SFTP user.",
 			Type:        config.ParameterTypeString,
-			Validations: []config.Validation{},
+			Validations: []config.Validation{
+				config.ValidationRequired{},
+			},
 		},
 	}
 }

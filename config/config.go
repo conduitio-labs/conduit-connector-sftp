@@ -20,12 +20,14 @@ package config
 type Config struct {
 	// Address is the address of the sftp server to connect.
 	Address string `json:"address" validate:"required"`
-	// User is the SFTP user (required with password and not required when using ssh key).
-	Username string `json:"username"`
-	// Password is the SFTP password (required with username and not required when using ssh key).
+	// User is the SFTP user.
+	Username string `json:"username" validate:"required"`
+	// Password is the SFTP password (can be used as passphrase for private key).
 	Password string `json:"password"`
 	// PrivateKeyPath is the private key for ssh login.
 	PrivateKeyPath string `json:"privateKeyPath"`
+	// DirectoryPath is the path to the directory to read/write data.
+	DirectoryPath string `json:"directoryPath" validate:"required"`
 }
 
 // Validate is used for custom validation for sftp authentication configuration.
@@ -33,14 +35,5 @@ func (c *Config) Validate() error {
 	if c.Username != "" && c.Password == "" {
 		return NewRequiredWithError(ConfigPassword, ConfigUsername)
 	}
-
-	if c.Password != "" && c.Username == "" {
-		return NewRequiredWithError(ConfigUsername, ConfigPassword)
-	}
-
-	if c.Username == "" && c.Password == "" && c.PrivateKeyPath == "" {
-		return ErrAuthRequired
-	}
-
 	return nil
 }

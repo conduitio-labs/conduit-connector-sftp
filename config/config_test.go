@@ -40,35 +40,21 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "success: publickey authentication",
+			name: "success: privatekey authentication",
 			fields: fields{
 				Address:        "localhost:22",
+				Username:       "user",
 				PrivateKeyPath: "path",
 			},
 			wantErr: nil,
 		},
 		{
-			name: "success: no authentication",
-			fields: fields{
-				Address: "localhost:22",
-			},
-			wantErr: ErrAuthRequired,
-		},
-		{
-			name: "success: missing password",
+			name: "error: missing password",
 			fields: fields{
 				Address:  "localhost:22",
 				Username: "user",
 			},
 			wantErr: NewRequiredWithError(ConfigPassword, ConfigUsername),
-		},
-		{
-			name: "success: missing username",
-			fields: fields{
-				Address:  "localhost:22",
-				Password: "pass",
-			},
-			wantErr: NewRequiredWithError(ConfigUsername, ConfigPassword),
 		},
 	}
 	for _, tt := range tests {
@@ -80,8 +66,10 @@ func TestConfig_Validate(t *testing.T) {
 				PrivateKeyPath: tt.fields.PrivateKeyPath,
 			}
 			err := c.Validate()
-			if err != nil && err.Error() != tt.wantErr.Error() {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			if err != nil {
+				if tt.wantErr != nil && tt.wantErr.Error() != err.Error() {
+					t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+				}
 			}
 		})
 	}

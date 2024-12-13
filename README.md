@@ -19,4 +19,4 @@ Run `make test` to run all the unit and integration tests.
 
 ### Configuration Options
 
-![scarf pixel](https://static.scarf.sh/a.png?x-pxid=)
+![scarf pixel](https://static.scarf.sh/a.png?x-pxid=64b333ae-77ad-4895-a5cd-a73bb14362d9)
