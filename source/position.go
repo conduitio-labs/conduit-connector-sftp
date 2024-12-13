@@ -12,16 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sftp
+package source
 
 import (
-	source "github.com/conduitio-labs/conduit-connector-sftp/source"
-	sdk "github.com/conduitio/conduit-connector-sdk"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/conduitio/conduit-commons/opencdc"
 )
 
-// Connector combines all constructors for each plugin in one struct.
-var Connector = sdk.Connector{
-	NewSpecification: Specification,
-	NewSource:        source.NewSource,
-	NewDestination:   NewDestination,
+// Position represents SFTP's position.
+type Position struct {
+	LastProcessedFileTimestamp time.Time `json:"lastProcessedFileTimestamp"`
+}
+
+// ParseSDKPosition parses opencdc.Position and returns Position.
+func ParseSDKPosition(position opencdc.Position) (*Position, error) {
+	if position == nil {
+		return &Position{}, nil
+	}
+
+	var pos Position
+	if err := json.Unmarshal(position, &pos); err != nil {
+		return nil, fmt.Errorf("unmarshal position: %w", err)
+	}
+
+	return &pos, nil
 }

@@ -1,4 +1,4 @@
-package connectorname
+package sftp
 
 import (
 	sdk "github.com/conduitio/conduit-connector-sdk"
@@ -11,7 +11,7 @@ var version = "(devel)"
 // Specification returns the connector's specification.
 func Specification() sdk.Specification {
 	return sdk.Specification{
-		Name:        "connectorname",
+		Name:        "sftp",
 		Summary:     "<describe your connector>",
 		Description: "<describe your connector in detail>",
 		Version:     version,

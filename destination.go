@@ -1,4 +1,4 @@
-package connectorname
+package sftp
 
 //go:generate paramgen -output=paramgen_dest.go DestinationConfig
 
