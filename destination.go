@@ -15,6 +15,7 @@
 package sftp
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -31,8 +32,9 @@ import (
 type Destination struct {
 	sdk.UnimplementedDestination
 
-	config config.Config
-	client *sftp.Client
+	config     config.Config
+	sshClient  *ssh.Client
+	sftpClient *sftp.Client
 }
 
 func NewDestination() sdk.Destination {
@@ -59,46 +61,69 @@ func (d *Destination) Configure(ctx context.Context, cfg commonsConfig.Config) e
 }
 
 func (d *Destination) Open(_ context.Context) error {
-	sshConfig := &ssh.ClientConfig{
-		User:            d.config.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	var err error
-	sshConfig.Auth, err = d.sshConfigAuth()
+	sshConfig, err := d.sshConfigAuth()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create SSH config: %w", err)
 	}
 
-	sshConn, err := ssh.Dial("tcp", d.config.Address, sshConfig)
+	d.sshClient, err = ssh.Dial("tcp", d.config.Address, sshConfig)
 	if err != nil {
 		return fmt.Errorf("failed to dial SSH: %w", err)
 	}
 
-	d.client, err = sftp.NewClient(sshConn)
+	d.sftpClient, err = sftp.NewClient(d.sshClient)
 	if err != nil {
+		d.sshClient.Close()
 		return fmt.Errorf("failed to create SFTP client: %w", err)
 	}
 
 	return nil
 }
 
-func (d *Destination) Write(_ context.Context, _ []opencdc.Record) (int, error) {
-	// Write writes len(r) records from r to the destination right away without
-	// caching. It should return the number of records written from r
-	// (0 <= n <= len(r)) and any error encountered that caused the write to
-	// stop early. Write must return a non-nil error if it returns n < len(r).
-	return 0, nil
+func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, error) {
+	for i, record := range records {
+		filename, ok := record.Metadata["filename"]
+		if !ok {
+			filename = string(record.Key.Bytes())
+		}
+
+		err := d.uploadFile(filename, record.Payload.After.Bytes())
+		if err != nil {
+			return i, err
+		}
+	}
+
+	return len(records), nil
 }
 
 func (d *Destination) Teardown(_ context.Context) error {
-	// Teardown signals to the plugin that all records were written and there
-	// will be no more calls to any other function. After Teardown returns, the
-	// plugin should be ready for a graceful shutdown.
+	var errs []error
+
+	if d.sftpClient != nil {
+		if err := d.sftpClient.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close SFTP client: %w", err))
+		}
+	}
+
+	if d.sshClient != nil {
+		if err := d.sshClient.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close SSH client: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("error teardown: %v", errs)
+	}
+
 	return nil
 }
 
-func (d *Destination) sshConfigAuth() ([]ssh.AuthMethod, error) {
+func (d *Destination) sshConfigAuth() (*ssh.ClientConfig, error) {
+	sshConfig := &ssh.ClientConfig{
+		User:            d.config.Username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
 	if d.config.PrivateKeyPath != "" {
 		key, err := os.ReadFile(d.config.PrivateKeyPath)
 		if err != nil {
@@ -118,8 +143,26 @@ func (d *Destination) sshConfigAuth() ([]ssh.AuthMethod, error) {
 			}
 		}
 
-		return []ssh.AuthMethod{ssh.PublicKeys(signer)}, nil
+		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+		return sshConfig, nil
 	}
 
-	return []ssh.AuthMethod{ssh.Password(d.config.Password)}, nil
+	sshConfig.Auth = []ssh.AuthMethod{ssh.Password(d.config.Password)}
+	return sshConfig, nil
+}
+
+func (d *Destination) uploadFile(filename string, content []byte) error {
+	remoteFile, err := d.sftpClient.Create(fmt.Sprintf("%s/%s", d.config.DirectoryPath, filename))
+	if err != nil {
+		return fmt.Errorf("failed to create remote file: %w", err)
+	}
+	defer remoteFile.Close()
+
+	reader := bytes.NewReader(content)
+	_, err = reader.WriteTo(remoteFile)
+	if err != nil {
+		return fmt.Errorf("failed to write content to remote file: %w", err)
+	}
+
+	return nil
 }
