@@ -49,12 +49,12 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "error: missing password",
+			name: "error: missing password and privateKeyPath",
 			fields: fields{
 				Address:  "localhost:22",
 				Username: "user",
 			},
-			wantErr: NewRequiredWithError(ConfigPassword, ConfigUsername),
+			wantErr: ErrEmptyAuthFields,
 		},
 	}
 	for _, tt := range tests {

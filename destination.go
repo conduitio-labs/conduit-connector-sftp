@@ -17,6 +17,7 @@ package sftp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -24,7 +25,6 @@ import (
 	commonsConfig "github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
-
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
@@ -77,6 +77,11 @@ func (d *Destination) Open(_ context.Context) error {
 		return fmt.Errorf("failed to create SFTP client: %w", err)
 	}
 
+	_, err = d.sftpClient.Stat(d.config.DirectoryPath)
+	if err != nil {
+		return fmt.Errorf("remote path does not exist: %w", err)
+	}
+
 	return nil
 }
 
@@ -112,7 +117,7 @@ func (d *Destination) Teardown(_ context.Context) error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("error teardown: %v", errs)
+		return fmt.Errorf("error teardown: %w", errors.Join(errs...))
 	}
 
 	return nil
@@ -120,35 +125,51 @@ func (d *Destination) Teardown(_ context.Context) error {
 
 func (d *Destination) sshConfigAuth() (*ssh.ClientConfig, error) {
 	sshConfig := &ssh.ClientConfig{
-		User:            d.config.Username,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		User: d.config.Username,
 	}
 
+	//nolint:dogsled // not required here.
+	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(d.config.HostKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse server public key: %w", err)
+	}
+
+	sshConfig.HostKeyCallback = ssh.FixedHostKey(hostKey)
+
 	if d.config.PrivateKeyPath != "" {
-		key, err := os.ReadFile(d.config.PrivateKeyPath)
+		auth, err := d.authWithPrivateKey()
 		if err != nil {
-			return nil, fmt.Errorf("failed to read private key file: %w", err)
+			return nil, err
 		}
 
-		var signer ssh.Signer
-		if d.config.Password != "" {
-			signer, err = ssh.ParsePrivateKeyWithPassphrase(key, []byte(d.config.Password))
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse private key: %w", err)
-			}
-		} else {
-			signer, err = ssh.ParsePrivateKey(key)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse private key: %w", err)
-			}
-		}
-
-		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+		sshConfig.Auth = []ssh.AuthMethod{auth}
 		return sshConfig, nil
 	}
 
 	sshConfig.Auth = []ssh.AuthMethod{ssh.Password(d.config.Password)}
 	return sshConfig, nil
+}
+
+func (d *Destination) authWithPrivateKey() (ssh.AuthMethod, error) {
+	key, err := os.ReadFile(d.config.PrivateKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	if d.config.Password != "" {
+		signer, err := ssh.ParsePrivateKeyWithPassphrase(key, []byte(d.config.Password))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+		return ssh.PublicKeys(signer), nil
+	}
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	return ssh.PublicKeys(signer), nil
 }
 
 func (d *Destination) uploadFile(filename string, content []byte) error {

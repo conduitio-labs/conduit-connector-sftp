@@ -16,10 +16,18 @@
 
 package config
 
+import (
+	"fmt"
+)
+
+var ErrEmptyAuthFields = fmt.Errorf("both %q and %q can not be empty", ConfigPassword, ConfigPrivateKeyPath)
+
 // Config contains shared config parameters, common to the source and destination.
 type Config struct {
 	// Address is the address of the sftp server to connect.
 	Address string `json:"address" validate:"required"`
+	// HostKey is the key used for host key callback validation.
+	HostKey string `json:"hostkey" validate:"required"`
 	// User is the SFTP user.
 	Username string `json:"username" validate:"required"`
 	// Password is the SFTP password (can be used as passphrase for private key).
@@ -32,8 +40,8 @@ type Config struct {
 
 // Validate is used for custom validation for sftp authentication configuration.
 func (c *Config) Validate() error {
-	if c.Username != "" && c.Password == "" {
-		return NewRequiredWithError(ConfigPassword, ConfigUsername)
+	if c.Password == "" && c.PrivateKeyPath == "" {
+		return ErrEmptyAuthFields
 	}
 	return nil
 }
