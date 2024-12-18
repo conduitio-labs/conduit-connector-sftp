@@ -207,21 +207,18 @@ func TestSource_Open(t *testing.T) {
 }
 
 func TestSource_Read(t *testing.T) {
-	t.Parallel()
-
 	hostKey, err := setupHostKey()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	t.Run("source read success", func(t *testing.T) {
-		err := writeTestFile("test.txt", "Hello World!")
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+	err = writeTestFile("test.txt", "Hello World!")
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	t.Run("source read success", func(t *testing.T) {
 		is := is.New(t)
 		s := NewSource()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
