@@ -12,51 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package source
 
 import (
-	"fmt"
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/matryer/is"
 )
 
-func TestValidateConfig(t *testing.T) {
+func TestParseSDKPosition(t *testing.T) {
 	t.Parallel()
+
 	tests := []struct {
 		name    string
-		in      Config
+		in      opencdc.Position
+		wantPos *Position
 		wantErr error
 	}{
 		{
-			name: "success_with_password",
-			in: Config{
-				Address:         "sftp.example.com",
-				Username:        "user",
-				Password:        "pass123",
-				Directory:       "/uploads",
-				ServerPublicKey: "publickey123",
+			name:    "success_position_is_nil",
+			in:      nil,
+			wantPos: &Position{},
+		},
+		{
+			name: "success_valid_position",
+			in: opencdc.Position(`{
+				"lastProcessedFileTimestamp": "2024-06-01T12:00:00Z"
+			}`),
+			wantPos: &Position{
+				LastProcessedFileTimestamp: time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC),
 			},
 		},
 		{
-			name: "success_with_private_key",
-			in: Config{
-				Address:         "sftp.example.com",
-				Username:        "user",
-				PrivateKeyPath:  "/path/to/private/key",
-				Directory:       "/uploads",
-				ServerPublicKey: "publickey123",
-			},
-		},
-		{
-			name: "failure_no_authentication",
-			in: Config{
-				Address:         "sftp.example.com",
-				Username:        "user",
-				Directory:       "/uploads",
-				ServerPublicKey: "publickey123",
-			},
-			wantErr: fmt.Errorf("either %q or %q must be provided for sftp authentication", KeyPassword, KeyPrivateKeyPath),
+			name:    "failure_invalid_json",
+			in:      opencdc.Position("invalid"),
+			wantErr: errors.New("unmarshal position: invalid character 'i' looking for beginning of value"),
 		},
 	}
 
@@ -65,9 +58,10 @@ func TestValidateConfig(t *testing.T) {
 			t.Parallel()
 			is := is.New(t)
 
-			err := tt.in.Validate()
+			got, err := ParseSDKPosition(tt.in)
 			if tt.wantErr == nil {
 				is.NoErr(err)
+				is.Equal(got, tt.wantPos)
 			} else {
 				is.True(err != nil)
 				is.Equal(err.Error(), tt.wantErr.Error())

@@ -8,10 +8,12 @@ import (
 )
 
 const (
-	ConfigAddress        = "address"
-	ConfigPassword       = "password"
-	ConfigPrivateKeyPath = "privateKeyPath"
-	ConfigUsername       = "username"
+	ConfigAddress         = "address"
+	ConfigDirectory       = "directory"
+	ConfigPassword        = "password"
+	ConfigPrivateKeyPath  = "privateKeyPath"
+	ConfigServerPublicKey = "serverPublicKey"
+	ConfigUsername        = "username"
 )
 
 func (Config) Parameters() map[string]config.Parameter {
@@ -19,6 +21,14 @@ func (Config) Parameters() map[string]config.Parameter {
 		ConfigAddress: {
 			Default:     "",
 			Description: "Address is the address of the sftp server to connect.",
+			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{
+				config.ValidationRequired{},
+			},
+		},
+		ConfigDirectory: {
+			Default:     "",
+			Description: "Directory on the remote SFTP server used as the source for reading or the destination for writing files.",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{
 				config.ValidationRequired{},
@@ -35,6 +45,14 @@ func (Config) Parameters() map[string]config.Parameter {
 			Description: "PrivateKeyPath is the private key path for ssh login.",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
+		},
+		ConfigServerPublicKey: {
+			Default:     "",
+			Description: "ServerPublicKey is the trusted server's public key used to validate the host during SSH connection.",
+			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{
+				config.ValidationRequired{},
+			},
 		},
 		ConfigUsername: {
 			Default:     "",

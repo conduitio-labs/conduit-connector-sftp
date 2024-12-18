@@ -1,14 +1,28 @@
+// Copyright © 2024 Meroxa, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package source
 
 //go:generate paramgen -output=paramgen_src.go SourceConfig
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
+	"net"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/conduitio/conduit-commons/lang"
@@ -24,11 +38,14 @@ import (
 type Source struct {
 	sdk.UnimplementedSource
 
-	config     config.Config
+	config   config.Config
+	position *Position
+
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
 
-	position *Position
+	ch   chan opencdc.Record
+	done chan struct{}
 }
 
 // NewSource initialises a new source.
@@ -50,6 +67,11 @@ func (s *Source) Configure(ctx context.Context, cfgRaw commonsConfig.Config) err
 	err := sdk.Util.ParseConfig(ctx, cfgRaw, &s.config, NewSource().Parameters())
 	if err != nil {
 		return err
+	}
+
+	err = s.config.Validate()
+	if err != nil {
+		return fmt.Errorf("error validating configuration: %w", err)
 	}
 
 	return nil
@@ -79,48 +101,64 @@ func (s *Source) Open(ctx context.Context, position opencdc.Position) error {
 		return err
 	}
 
+	s.ch = make(chan opencdc.Record)
+	s.done = make(chan struct{})
+
+	err = NewIterator(ctx, s.sshClient, s.sftpClient, s.position, s.config, s.done, s.ch)
+	if err != nil {
+		return fmt.Errorf("creating iterator: %w", err)
+	}
+
 	return nil
 }
 
 func (s *Source) Read(ctx context.Context) (opencdc.Record, error) {
-	fmt.Println("trying to read-------------")
-	// List files in the source directory
-	files, err := s.listUnprocessedFiles()
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("list files: %w", err)
+	sdk.Logger(ctx).Debug().Msg("Reading a record from SFTP Source...")
+
+	if s == nil || s.ch == nil {
+		return opencdc.Record{}, errors.New("source not opened for reading")
 	}
 
-	fmt.Println("got files------------ ", len(files))
-
-	if len(files) == 0 {
+	select {
+	case <-ctx.Done():
+		return opencdc.Record{}, ctx.Err()
+	case record, ok := <-s.ch:
+		if !ok {
+			return opencdc.Record{}, fmt.Errorf("error reading data, records channel closed unexpectedly")
+		}
+		return record, nil //nolint:nlreturn // compact code style
+	default:
 		return opencdc.Record{}, sdk.ErrBackoffRetry
 	}
-
-	// Process the first unprocessed file
-	filename := files[0]
-	record, err := s.processFile(ctx, filename)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("process file %s: %w", filename, err)
-	}
-
-	fmt.Println("file processed------- ", filename)
-	fmt.Println("here is the record------- ", record)
-
-	return record, nil
 }
 
 func (s *Source) Ack(ctx context.Context, position opencdc.Position) error {
-	// Ack signals to the implementation that the record with the supplied
-	// position was successfully processed. This method might be called after
-	// the context of Read is already cancelled, since there might be
-	// outstanding acks that need to be delivered. When Teardown is called it is
-	// guaranteed there won't be any more calls to Ack.
-	// Ack can be called concurrently with Read.
+	sdk.Logger(ctx).Trace().
+		Str("position", string(position)).
+		Msg("got ack")
+
 	return nil
 }
 
 func (s *Source) Teardown(ctx context.Context) error {
 	var errs []error
+
+	// Ensure the iterator has finished
+	if s.done != nil {
+		select {
+		case <-s.done:
+			sdk.Logger(ctx).Debug().Msg("Teardown: Iterator finished.")
+		case <-ctx.Done():
+			sdk.Logger(ctx).Debug().Msg("Teardown: Context cancelled while waiting for iterator.")
+		}
+	}
+
+	if s.ch != nil {
+		// close the read channel for write
+		close(s.ch)
+		// reset read channel to nil, to avoid reading buffered records
+		s.ch = nil
+	}
 
 	if s.sftpClient != nil {
 		if err := s.sftpClient.Close(); err != nil {
@@ -134,10 +172,7 @@ func (s *Source) Teardown(ctx context.Context) error {
 		}
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("teardown errors: %v", errs)
-	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // createSSHConfig creates SSH configuration for authentication
@@ -173,88 +208,30 @@ func (s *Source) createSSHConfig() (*ssh.ClientConfig, error) {
 		return nil, fmt.Errorf("no valid authentication method provided")
 	}
 
+	// Parse the trusted host public key
+	parsedPublicKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(s.config.ServerPublicKey))
+	if err != nil {
+		return nil, fmt.Errorf("parse trusted host key: %w", err)
+	}
+
+	hostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		// Byte-to-byte comparison of the keys
+		if key.Type() != parsedPublicKey.Type() {
+			return fmt.Errorf("host key type mismatch: got %s, want %s",
+				key.Type(), parsedPublicKey.Type())
+		}
+
+		if !bytes.Equal(key.Marshal(), parsedPublicKey.Marshal()) {
+			return fmt.Errorf("host key does not match the trusted key")
+		}
+
+		return nil
+	}
+
 	return &ssh.ClientConfig{
 		User:            s.config.Username,
 		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Caution: Not secure for production
-		Timeout:         30 * time.Second,        
+		HostKeyCallback: hostKeyCallback,
+		Timeout:         30 * time.Second,
 	}, nil
-}
-
-// listUnprocessedFiles finds files matching the pattern that haven't been processed
-func (s *Source) listUnprocessedFiles() ([]string, error) {
-	files, err := s.sftpClient.ReadDir(s.config.SourceDirectory)
-	if err != nil {
-		return nil, fmt.Errorf("read directory: %w", err)
-	}
-
-	unprocessedFiles := []string{}
-	for _, file := range files {
-		if !file.IsDir() {
-			filename := file.Name()
-			// Check file pattern match and modification time
-			if matched, _ := filepath.Match(s.config.FilePattern, filename); matched &&
-				file.ModTime().After(s.position.LastProcessedFileTimestamp) {
-				unprocessedFiles = append(unprocessedFiles, filename)
-			}
-		}
-	}
-
-	fmt.Println("unprocessed files---------- ", len(unprocessedFiles))
-
-	return unprocessedFiles, nil
-}
-
-// processFile converts a file into an OpenCDC record
-func (s *Source) processFile(_ context.Context, filename string) (opencdc.Record, error) {
-	fullPath := filepath.Join(s.config.SourceDirectory, filename)
-
-	// Get file info
-	fileInfo, err := s.sftpClient.Stat(fullPath)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("get file info: %w", err)
-	}
-
-	// Open the file
-	file, err := s.sftpClient.Open(fullPath)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("open file: %w", err)
-	}
-	defer file.Close()
-
-	// Read file contents
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("read file: %w", err)
-	}
-
-	// Create record metadata
-	metadata := opencdc.Metadata{
-		opencdc.MetadataCollection: s.config.SourceDirectory,
-		opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
-		"filename":                 filename,
-		"source_path":              fullPath,
-		"file_size":                fmt.Sprintf("%d", len(content)),
-		"mod_time":                 fileInfo.ModTime().UTC().Format(time.RFC3339),
-	}
-
-	// Create record position
-	position := &Position{
-		LastProcessedFileTimestamp: fileInfo.ModTime(),
-	}
-	positionBytes, err := json.Marshal(position)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("marshal position: %w", err)
-	}
-
-	// update record position
-	s.position = position
-
-	// Create OpenCDC record
-	return sdk.Util.Source.NewRecordCreate(
-		positionBytes,
-		metadata,
-		opencdc.StructuredData{"filename": filename},
-		opencdc.RawData(content),
-	), nil
 }

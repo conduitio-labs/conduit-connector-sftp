@@ -9,10 +9,13 @@ import (
 
 const (
 	ConfigAddress         = "address"
+	ConfigBatchSize       = "batchSize"
+	ConfigDirectory       = "directory"
 	ConfigFilePattern     = "filePattern"
 	ConfigPassword        = "password"
+	ConfigPollingPeriod   = "pollingPeriod"
 	ConfigPrivateKeyPath  = "privateKeyPath"
-	ConfigSourceDirectory = "sourceDirectory"
+	ConfigServerPublicKey = "serverPublicKey"
 	ConfigUsername        = "username"
 )
 
@@ -21,6 +24,23 @@ func (Config) Parameters() map[string]config.Parameter {
 		ConfigAddress: {
 			Default:     "",
 			Description: "Address is the address of the sftp server to connect.",
+			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{
+				config.ValidationRequired{},
+			},
+		},
+		ConfigBatchSize: {
+			Default:     "1000",
+			Description: "BatchSize specifies the number of files to process in a single batch.",
+			Type:        config.ParameterTypeInt,
+			Validations: []config.Validation{
+				config.ValidationGreaterThan{V: 0},
+				config.ValidationLessThan{V: 100001},
+			},
+		},
+		ConfigDirectory: {
+			Default:     "",
+			Description: "Directory on the remote SFTP server used as the source for reading or the destination for writing files.",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{
 				config.ValidationRequired{},
@@ -38,15 +58,21 @@ func (Config) Parameters() map[string]config.Parameter {
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
 		},
+		ConfigPollingPeriod: {
+			Default:     "5s",
+			Description: "This period is used by iterator to poll for new data at regular intervals.",
+			Type:        config.ParameterTypeDuration,
+			Validations: []config.Validation{},
+		},
 		ConfigPrivateKeyPath: {
 			Default:     "",
 			Description: "PrivateKeyPath is the private key path for ssh login.",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
 		},
-		ConfigSourceDirectory: {
+		ConfigServerPublicKey: {
 			Default:     "",
-			Description: "Directory on the remote SFTP server to retrieve files from.",
+			Description: "ServerPublicKey is the trusted server's public key used to validate the host during SSH connection.",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{
 				config.ValidationRequired{},

@@ -35,6 +35,10 @@ type Config struct {
 	Password string `json:"password"`
 	// PrivateKeyPath is the private key path for ssh login.
 	PrivateKeyPath string `json:"privateKeyPath"`
+	// Directory on the remote SFTP server used as the source for reading or the destination for writing files.
+	Directory string `json:"directory" validate:"required"`
+	// ServerPublicKey is the trusted server's public key used to validate the host during SSH connection.
+	ServerPublicKey string `json:"serverPublicKey" validate:"required"`
 }
 
 // Validate is used for custom validation for sftp authentication configuration.
