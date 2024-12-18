@@ -31,7 +31,6 @@ func TestDestination_Configure(t *testing.T) {
 	t.Parallel()
 
 	t.Run("destination configure success", func(t *testing.T) {
-
 		is := is.New(t)
 
 		d := NewDestination()
@@ -175,7 +174,7 @@ func TestDestination_Open(t *testing.T) {
 
 		err = d.Open(ctx)
 		is.True(err != nil)
-		is.Equal(err.Error(), "failed to dial SSH: dial tcp [::1]:22: connect: connection refused")
+		is.Equal(err.Error(), "failed to dial SSH: ssh: handshake failed: ssh: host key mismatch")
 	})
 
 	t.Run("destination open error remote path not exist", func(t *testing.T) {
@@ -345,7 +344,6 @@ func setupHostKey() (string, error) {
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("error setupHostKey: %w", err)
-
 	}
 	return string(output), nil
 }
