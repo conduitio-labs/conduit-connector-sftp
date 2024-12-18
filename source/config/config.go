@@ -15,6 +15,7 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/config"
@@ -34,6 +35,9 @@ type Config struct {
 // Validate executes manual validations.
 func (c Config) Validate() error {
 	err := c.Config.Validate()
+	if err != nil {
+		return fmt.Errorf("validate config: %w", err)
+	}
 
-	return err
+	return nil
 }

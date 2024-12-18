@@ -17,22 +17,23 @@ package source
 //go:generate paramgen -output=paramgen_src.go SourceConfig
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
-	"time"
 
+	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
+	commonsConfig "github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+)
 
-	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
-	commonsConfig "github.com/conduitio/conduit-commons/config"
+var (
+	ErrSourceNotOpened = errors.New("source not opened for reading")
+	ErrChannelClosed   = errors.New("error reading data, records channel closed unexpectedly")
 )
 
 type Source struct {
@@ -64,9 +65,10 @@ func (s *Source) Parameters() commonsConfig.Parameters {
 }
 
 func (s *Source) Configure(ctx context.Context, cfgRaw commonsConfig.Config) error {
+	sdk.Logger(ctx).Info().Msg("Configuring Source...")
 	err := sdk.Util.ParseConfig(ctx, cfgRaw, &s.config, NewSource().Parameters())
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid config: %w", err)
 	}
 
 	err = s.config.Validate()
@@ -78,22 +80,26 @@ func (s *Source) Configure(ctx context.Context, cfgRaw commonsConfig.Config) err
 }
 
 func (s *Source) Open(ctx context.Context, position opencdc.Position) error {
-	// Establish SSH connection
-	sshConfig, err := s.createSSHConfig()
+	sdk.Logger(ctx).Info().Msg("Opening a SFTP Source...")
+	sshConfig, err := s.sshConfigAuth()
 	if err != nil {
-		return fmt.Errorf("create SSH config: %w", err)
+		return fmt.Errorf("failed to create SSH config: %w", err)
 	}
 
 	s.sshClient, err = ssh.Dial("tcp", s.config.Address, sshConfig)
 	if err != nil {
-		return fmt.Errorf("dial SSH: %w", err)
+		return fmt.Errorf("failed to dial SSH: %w", err)
 	}
 
-	// Create SFTP client
 	s.sftpClient, err = sftp.NewClient(s.sshClient)
 	if err != nil {
 		s.sshClient.Close()
-		return fmt.Errorf("create SFTP client: %w", err)
+		return fmt.Errorf("failed to create SFTP client: %w", err)
+	}
+
+	_, err = s.sftpClient.Stat(s.config.DirectoryPath)
+	if err != nil {
+		return fmt.Errorf("remote path does not exist: %w", err)
 	}
 
 	s.position, err = ParseSDKPosition(position)
@@ -116,7 +122,7 @@ func (s *Source) Read(ctx context.Context) (opencdc.Record, error) {
 	sdk.Logger(ctx).Debug().Msg("Reading a record from SFTP Source...")
 
 	if s == nil || s.ch == nil {
-		return opencdc.Record{}, errors.New("source not opened for reading")
+		return opencdc.Record{}, ErrSourceNotOpened
 	}
 
 	select {
@@ -124,7 +130,7 @@ func (s *Source) Read(ctx context.Context) (opencdc.Record, error) {
 		return opencdc.Record{}, ctx.Err()
 	case record, ok := <-s.ch:
 		if !ok {
-			return opencdc.Record{}, fmt.Errorf("error reading data, records channel closed unexpectedly")
+			return opencdc.Record{}, ErrChannelClosed
 		}
 		return record, nil //nolint:nlreturn // compact code style
 	default:
@@ -141,9 +147,7 @@ func (s *Source) Ack(ctx context.Context, position opencdc.Position) error {
 }
 
 func (s *Source) Teardown(ctx context.Context) error {
-	var errs []error
-
-	// Ensure the iterator has finished
+	sdk.Logger(ctx).Info().Msg("Tearing down the SFTP Source")
 	if s.done != nil {
 		select {
 		case <-s.done:
@@ -160,6 +164,7 @@ func (s *Source) Teardown(ctx context.Context) error {
 		s.ch = nil
 	}
 
+	var errs []error
 	if s.sftpClient != nil {
 		if err := s.sftpClient.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close SFTP client: %w", err))
@@ -175,63 +180,51 @@ func (s *Source) Teardown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// createSSHConfig creates SSH configuration for authentication
-func (s *Source) createSSHConfig() (*ssh.ClientConfig, error) {
-	var authMethod ssh.AuthMethod
-
-	// Prefer private key if provided
-	if s.config.PrivateKeyPath != "" {
-		// Read private key file
-		privateKeyBytes, err := os.ReadFile(s.config.PrivateKeyPath)
-		if err != nil {
-			return nil, fmt.Errorf("read private key file: %w", err)
-		}
-
-		var signer ssh.Signer
-		// Check if key requires a passphrase
-		if s.config.Password != "" {
-			// Key is passphrase-protected
-			signer, err = ssh.ParsePrivateKeyWithPassphrase(privateKeyBytes, []byte(s.config.Password))
-		} else {
-			// Try parsing key without passphrase
-			signer, err = ssh.ParsePrivateKey(privateKeyBytes)
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("parse private key: %w", err)
-		}
-		authMethod = ssh.PublicKeys(signer)
-	} else if s.config.Username != "" && s.config.Password != "" {
-		// Use password authentication
-		authMethod = ssh.Password(s.config.Password)
-	} else {
-		return nil, fmt.Errorf("no valid authentication method provided")
+func (s *Source) sshConfigAuth() (*ssh.ClientConfig, error) {
+	sshConfig := &ssh.ClientConfig{
+		User: s.config.Username,
 	}
 
-	// Parse the trusted host public key
-	parsedPublicKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(s.config.ServerPublicKey))
+	//nolint:dogsled // not required here.
+	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(s.config.HostKey))
 	if err != nil {
-		return nil, fmt.Errorf("parse trusted host key: %w", err)
+		return nil, fmt.Errorf("failed to parse host key: %w", err)
 	}
 
-	hostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		// Byte-to-byte comparison of the keys
-		if key.Type() != parsedPublicKey.Type() {
-			return fmt.Errorf("host key type mismatch: got %s, want %s",
-				key.Type(), parsedPublicKey.Type())
+	sshConfig.HostKeyCallback = ssh.FixedHostKey(hostKey)
+
+	if s.config.PrivateKeyPath != "" {
+		auth, err := s.authWithPrivateKey()
+		if err != nil {
+			return nil, err
 		}
 
-		if !bytes.Equal(key.Marshal(), parsedPublicKey.Marshal()) {
-			return fmt.Errorf("host key does not match the trusted key")
-		}
-
-		return nil
+		sshConfig.Auth = []ssh.AuthMethod{auth}
+		return sshConfig, nil
 	}
 
-	return &ssh.ClientConfig{
-		User:            s.config.Username,
-		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: hostKeyCallback,
-		Timeout:         30 * time.Second,
-	}, nil
+	sshConfig.Auth = []ssh.AuthMethod{ssh.Password(s.config.Password)}
+	return sshConfig, nil
+}
+
+func (s *Source) authWithPrivateKey() (ssh.AuthMethod, error) {
+	key, err := os.ReadFile(s.config.PrivateKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read private key file: %w", err)
+	}
+
+	if s.config.Password != "" {
+		signer, err := ssh.ParsePrivateKeyWithPassphrase(key, []byte(s.config.Password))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+		return ssh.PublicKeys(signer), nil
+	}
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	return ssh.PublicKeys(signer), nil
 }

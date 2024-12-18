@@ -6,15 +6,23 @@ build:
 
 .PHONY: test
 test:
-	go test $(GOTEST_FLAGS) -race ./...
-
-.PHONY: test-integration
-test-integration:
 	# run required docker containers, execute integration tests, stop containers after tests
 	docker compose -f test/docker-compose.yml up -d
 	go test $(GOTEST_FLAGS) -v -race ./...; ret=$$?; \
 		docker compose -f test/docker-compose.yml down; \
 		exit $$ret
+
+.PHONY: gofumpt
+gofumpt:
+	go install mvdan.cc/gofumpt@latest
+
+.PHONY: fmt
+fmt: gofumpt
+	gofumpt -l -w .
+
+.PHONY: lint
+lint:
+	golangci-lint run -v
 
 .PHONY: generate
 generate:
@@ -25,11 +33,3 @@ install-tools:
 	@echo Installing tools from tools.go
 	@go list -e -f '{{ join .Imports "\n" }}' tools.go | xargs -I % go list -f "%@{{.Module.Version}}" % | xargs -tI % go install %
 	@go mod tidy
-
-.PHONY: fmt
-fmt:
-	gofumpt -l -w .
-
-.PHONY: lint
-lint:
-	golangci-lint run

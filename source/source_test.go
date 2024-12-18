@@ -42,21 +42,21 @@ func TestSource_Configure_allFieldsSuccess(t *testing.T) {
 
 	// Test valid configuration using private key
 	err := s.Configure(ctx, commonsConfig.Config{
-		"address":         "sftp.example.com:22",
-		"username":        "testuser",
-		"privateKeyPath":  "/path/to/privatekey",
-		"serverPublicKey": "ssh-rsa AAAAB3NzaC1...",
-		"directory":       "/path/to/directory",
+		"address":        "sftp.example.com:22",
+		"username":       "testuser",
+		"privateKeyPath": "/path/to/privatekey",
+		"hostKey":        "ssh-rsa AAAAB3NzaC1...",
+		"directoryPath":  "/path/to/directory",
 	})
 	is.NoErr(err)
 
 	// Test valid configuration using password
 	err = s.Configure(ctx, commonsConfig.Config{
-		"address":         "sftp.example.com:22",
-		"username":        "testuser",
-		"password":        "testpass",
-		"serverPublicKey": "ssh-rsa AAAAB3NzaC1...",
-		"directory":       "/path/to/directory",
+		"address":       "sftp.example.com:22",
+		"username":      "testuser",
+		"password":      "testpass",
+		"hostKey":       "ssh-rsa AAAAB3NzaC1...",
+		"directoryPath": "/path/to/directory",
 	})
 	is.NoErr(err)
 }
@@ -70,16 +70,16 @@ func TestSource_Configure_missingAuthentication(t *testing.T) {
 	s := Source{}
 
 	err := s.Configure(ctx, commonsConfig.Config{
-		"address":         "sftp.example.com:22",
-		"username":        "testuser",
-		"serverPublicKey": "ssh-rsa AAAAB3NzaC1...",
-		"directory":       "/path/to/directory",
+		"address":       "sftp.example.com:22",
+		"username":      "testuser",
+		"hostKey":       "ssh-rsa AAAAB3NzaC1...",
+		"directoryPath": "/path/to/directory",
 	})
 	is.True(err != nil)
-	is.Equal(err.Error(), `error validating configuration: either "password" or "privateKeyPath" must be provided for sftp authentication`)
+	is.Equal(err.Error(), `error validating configuration: validate config: both "password" and "privateKeyPath" can not be empty`)
 }
 
-func TestSource_Configure_missingServerPublicKey(t *testing.T) {
+func TestSource_Configure_missingHostKey(t *testing.T) {
 	t.Parallel()
 
 	is := is.New(t)
@@ -88,13 +88,13 @@ func TestSource_Configure_missingServerPublicKey(t *testing.T) {
 	s := Source{}
 
 	err := s.Configure(ctx, commonsConfig.Config{
-		"address":   "sftp.example.com:22",
-		"username":  "testuser",
-		"password":  "testpass",
-		"directory": "/path/to/directory",
+		"address":       "sftp.example.com:22",
+		"username":      "testuser",
+		"password":      "testpass",
+		"directoryPath": "/path/to/directory",
 	})
 	is.True(err != nil)
-	is.Equal(err.Error(), `config invalid: error validating "serverPublicKey": required parameter is not provided`)
+	is.Equal(err.Error(), `invalid config: config invalid: error validating "hostKey": required parameter is not provided`)
 }
 
 func TestSource_Read_Success(t *testing.T) {

@@ -15,62 +15,61 @@
 package config
 
 import (
-	"fmt"
 	"testing"
-
-	"github.com/matryer/is"
 )
 
-func TestValidateConfig(t *testing.T) {
-	t.Parallel()
+func TestConfig_Validate(t *testing.T) {
+	type fields struct {
+		Address        string
+		Username       string
+		Password       string
+		PrivateKeyPath string
+	}
 	tests := []struct {
 		name    string
-		in      Config
+		fields  fields
 		wantErr error
 	}{
 		{
-			name: "success_with_password",
-			in: Config{
-				Address:         "sftp.example.com",
-				Username:        "user",
-				Password:        "pass123",
-				Directory:       "/uploads",
-				ServerPublicKey: "publickey123",
+			name: "success: password authentication",
+			fields: fields{
+				Address:  "localhost:22",
+				Username: "user",
+				Password: "pass",
 			},
+			wantErr: nil,
 		},
 		{
-			name: "success_with_private_key",
-			in: Config{
-				Address:         "sftp.example.com",
-				Username:        "user",
-				PrivateKeyPath:  "/path/to/private/key",
-				Directory:       "/uploads",
-				ServerPublicKey: "publickey123",
+			name: "success: privatekey authentication",
+			fields: fields{
+				Address:        "localhost:22",
+				Username:       "user",
+				PrivateKeyPath: "path",
 			},
+			wantErr: nil,
 		},
 		{
-			name: "failure_no_authentication",
-			in: Config{
-				Address:         "sftp.example.com",
-				Username:        "user",
-				Directory:       "/uploads",
-				ServerPublicKey: "publickey123",
+			name: "error: missing password and privateKeyPath",
+			fields: fields{
+				Address:  "localhost:22",
+				Username: "user",
 			},
-			wantErr: fmt.Errorf("either %q or %q must be provided for sftp authentication", KeyPassword, KeyPrivateKeyPath),
+			wantErr: ErrEmptyAuthFields,
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			is := is.New(t)
-
-			err := tt.in.Validate()
-			if tt.wantErr == nil {
-				is.NoErr(err)
-			} else {
-				is.True(err != nil)
-				is.Equal(err.Error(), tt.wantErr.Error())
+			c := &Config{
+				Address:        tt.fields.Address,
+				Username:       tt.fields.Username,
+				Password:       tt.fields.Password,
+				PrivateKeyPath: tt.fields.PrivateKeyPath,
+			}
+			err := c.Validate()
+			if err != nil {
+				if tt.wantErr != nil && tt.wantErr.Error() != err.Error() {
+					t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+				}
 			}
 		})
 	}

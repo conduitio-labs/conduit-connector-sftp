@@ -18,34 +18,28 @@ package config
 
 import "fmt"
 
-const (
-	// KeyPassword is a config name for a password.
-	KeyPassword = "password"
-	// KeyPrivateKeyPath is a config name for a private key path.
-	KeyPrivateKeyPath = "privateKeyPath"
-)
+var ErrEmptyAuthFields = fmt.Errorf("both %q and %q can not be empty", ConfigPassword, ConfigPrivateKeyPath)
 
 // Config contains shared config parameters, common to the source and destination.
 type Config struct {
 	// Address is the address of the sftp server to connect.
 	Address string `json:"address" validate:"required"`
+	// HostKey is the key used for host key callback validation.
+	HostKey string `json:"hostKey" validate:"required"`
 	// User is the SFTP user.
 	Username string `json:"username" validate:"required"`
-	// Password is the SFTP password (can be used as passphrase if using ssh keys).
+	// Password is the SFTP password (can be used as passphrase for private key).
 	Password string `json:"password"`
-	// PrivateKeyPath is the private key path for ssh login.
+	// PrivateKeyPath is the private key for ssh login.
 	PrivateKeyPath string `json:"privateKeyPath"`
-	// Directory on the remote SFTP server used as the source for reading or the destination for writing files.
-	Directory string `json:"directory" validate:"required"`
-	// ServerPublicKey is the trusted server's public key used to validate the host during SSH connection.
-	ServerPublicKey string `json:"serverPublicKey" validate:"required"`
+	// DirectoryPath is the path to the directory to read/write data.
+	DirectoryPath string `json:"directoryPath" validate:"required"`
 }
 
 // Validate is used for custom validation for sftp authentication configuration.
 func (c *Config) Validate() error {
 	if c.Password == "" && c.PrivateKeyPath == "" {
-		return fmt.Errorf("either %q or %q must be provided for sftp authentication", KeyPassword, KeyPrivateKeyPath)
+		return ErrEmptyAuthFields
 	}
-
 	return nil
 }

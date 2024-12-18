@@ -104,7 +104,7 @@ func (iter *Iterator) start(ctx context.Context) {
 
 		select {
 		case iter.ch <- record:
-			
+
 		case <-ctx.Done():
 			sdk.Logger(ctx).Debug().Msg("context cancelled, iterator shutting down...")
 			return //nolint:nlreturn // compact code style
@@ -132,7 +132,7 @@ func (iter *Iterator) hasNext() (bool, error) {
 // next returns the next record.
 func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
 	fileInfo := iter.files[0]
-	fullPath := filepath.Join(iter.config.Directory, fileInfo.name)
+	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
 
 	file, err := iter.sftpClient.Open(fullPath)
 	if err != nil {
@@ -147,7 +147,7 @@ func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
 
 	// Create record metadata
 	metadata := opencdc.Metadata{
-		opencdc.MetadataCollection: iter.config.Directory,
+		opencdc.MetadataCollection: iter.config.DirectoryPath,
 		opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 		"filename":                 fileInfo.name,
 		"source_path":              fullPath,
@@ -179,9 +179,9 @@ func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
 	), nil
 }
 
-// loadFiles finds files matching the pattern that haven't been processed
+// loadFiles finds files matching the pattern that haven't been processed.
 func (iter *Iterator) loadFiles() error {
-	files, err := iter.sftpClient.ReadDir(iter.config.Directory)
+	files, err := iter.sftpClient.ReadDir(iter.config.DirectoryPath)
 	if err != nil {
 		return fmt.Errorf("read directory: %w", err)
 	}
