@@ -14,8 +14,6 @@
 
 package source
 
-//go:generate paramgen -output=paramgen_src.go SourceConfig
-
 import (
 	"context"
 	"errors"
