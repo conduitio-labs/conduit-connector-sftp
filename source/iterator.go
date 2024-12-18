@@ -21,6 +21,7 @@ import (
 	"io"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
@@ -41,8 +42,8 @@ type Iterator struct {
 	position   *Position
 	config     config.Config
 	files      []fileInfo
-	done       chan struct{}
 	ch         chan opencdc.Record
+	wg         *sync.WaitGroup
 }
 
 // NewTableIterator creates a new iterator goroutine and polls redshift for new records.
@@ -52,16 +53,16 @@ func NewIterator(
 	sftpClient *sftp.Client,
 	position *Position,
 	config config.Config,
-	done chan struct{},
 	ch chan opencdc.Record,
+	wg *sync.WaitGroup,
 ) error {
 	iter := &Iterator{
 		sshClient:  sshClient,
 		sftpClient: sftpClient,
 		position:   position,
 		config:     config,
-		done:       done,
 		ch:         ch,
+		wg:         wg,
 	}
 
 	err := iter.loadFiles()
@@ -76,7 +77,7 @@ func NewIterator(
 
 // start polls redshift for new records and writes it into the source channel.
 func (iter *Iterator) start(ctx context.Context) {
-	defer close(iter.done)
+	defer iter.wg.Done()
 
 	for {
 		hasNext, err := iter.hasNext()

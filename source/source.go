@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
 	commonsConfig "github.com/conduitio/conduit-commons/config"
@@ -43,8 +44,8 @@ type Source struct {
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
 
-	ch   chan opencdc.Record
-	done chan struct{}
+	ch chan opencdc.Record
+	wg *sync.WaitGroup
 }
 
 // NewSource initialises a new source.
@@ -106,9 +107,10 @@ func (s *Source) Open(ctx context.Context, position opencdc.Position) error {
 	}
 
 	s.ch = make(chan opencdc.Record)
-	s.done = make(chan struct{})
+	s.wg = &sync.WaitGroup{}
 
-	err = NewIterator(ctx, s.sshClient, s.sftpClient, s.position, s.config, s.done, s.ch)
+	s.wg.Add(1)
+	err = NewIterator(ctx, s.sshClient, s.sftpClient, s.position, s.config, s.ch, s.wg)
 	if err != nil {
 		return fmt.Errorf("creating iterator: %w", err)
 	}
@@ -146,13 +148,10 @@ func (s *Source) Ack(ctx context.Context, position opencdc.Position) error {
 
 func (s *Source) Teardown(ctx context.Context) error {
 	sdk.Logger(ctx).Info().Msg("Tearing down the SFTP Source")
-	if s.done != nil {
-		select {
-		case <-s.done:
-			sdk.Logger(ctx).Debug().Msg("Teardown: Iterator finished.")
-		case <-ctx.Done():
-			sdk.Logger(ctx).Debug().Msg("Teardown: Context cancelled while waiting for iterator.")
-		}
+
+	if s.wg != nil {
+		// wait for goroutines to finish
+		s.wg.Wait()
 	}
 
 	if s.ch != nil {

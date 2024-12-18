@@ -16,6 +16,7 @@ package source
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -163,31 +164,29 @@ func TestSource_Teardown_Success(t *testing.T) {
 	ctx := context.Background()
 
 	s := &Source{
-		ch:   make(chan opencdc.Record),
-		done: make(chan struct{}),
+		ch: make(chan opencdc.Record),
+		wg: &sync.WaitGroup{},
 	}
-
-	// Simulate iterator finishing
-	close(s.done)
 
 	err := s.Teardown(ctx)
 	is.NoErr(err)
 	is.True(s.ch == nil)
 }
 
-func TestSource_Teardown_WithPendingIterator(t *testing.T) {
+func TestSource_Teardown_WithPendingGoroutines(t *testing.T) {
 	t.Parallel()
 
 	is := is.New(t)
 	ctx := context.Background()
 
 	s := &Source{
-		ch:   make(chan opencdc.Record),
-		done: make(chan struct{}),
+		ch: make(chan opencdc.Record),
+		wg: &sync.WaitGroup{},
 	}
 
+	s.wg.Add(1)
 	go func() {
-		close(s.done)
+		defer s.wg.Done()
 		time.Sleep(100 * time.Millisecond)
 	}()
 
