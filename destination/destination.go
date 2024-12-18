@@ -19,10 +19,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/config"
 	commonsConfig "github.com/conduitio/conduit-commons/config"
+	"github.com/conduitio/conduit-commons/lang"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
 	"github.com/pkg/sftp"
@@ -38,7 +40,12 @@ type Destination struct {
 }
 
 func NewDestination() sdk.Destination {
-	return sdk.DestinationWithMiddleware(&Destination{}, sdk.DefaultDestinationMiddleware()...)
+	return sdk.DestinationWithMiddleware(&Destination{}, sdk.DefaultDestinationMiddleware(
+		sdk.DestinationWithSchemaExtractionConfig{
+			PayloadEnabled: lang.Ptr(false),
+			KeyEnabled:     lang.Ptr(false),
+		},
+	)...)
 }
 
 func (d *Destination) Parameters() commonsConfig.Parameters {
@@ -126,17 +133,28 @@ func (d *Destination) Teardown(ctx context.Context) error {
 }
 
 func (d *Destination) sshConfigAuth() (*ssh.ClientConfig, error) {
-	sshConfig := &ssh.ClientConfig{
-		User: d.config.Username,
-	}
-
 	//nolint:dogsled // not required here.
 	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(d.config.HostKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse server public key: %w", err)
 	}
 
-	sshConfig.HostKeyCallback = ssh.FixedHostKey(hostKey)
+	hostKeyCallback := func(_ string, _ net.Addr, key ssh.PublicKey) error {
+		if key.Type() != hostKey.Type() {
+			return NewMismatchKeyTypeError(key.Type(), hostKey.Type())
+		}
+
+		if !bytes.Equal(key.Marshal(), hostKey.Marshal()) {
+			return ErrUntrustedKey
+		}
+
+		return nil
+	}
+
+	sshConfig := &ssh.ClientConfig{
+		User:            d.config.Username,
+		HostKeyCallback: hostKeyCallback,
+	}
 
 	if d.config.PrivateKeyPath != "" {
 		auth, err := d.authWithPrivateKey()

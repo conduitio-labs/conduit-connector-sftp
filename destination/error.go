@@ -12,19 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sftp_test
+package destination
 
 import (
-	"context"
-	"testing"
-
-	sftp "github.com/conduitio-labs/conduit-connector-sftp"
-	"github.com/matryer/is"
+	"fmt"
 )
 
-func TestTeardownSource_NoOpen(t *testing.T) {
-	is := is.New(t)
-	con := sftp.NewSource()
-	err := con.Teardown(context.Background())
-	is.NoErr(err)
+var ErrUntrustedKey = fmt.Errorf("host key does not match the trusted key")
+
+type MismatchKeyTypeError struct {
+	key1, key2 string
+}
+
+func (e MismatchKeyTypeError) Error() string {
+	return fmt.Sprintf("host key type mismatch: got %s, want %s", e.key1, e.key2)
+}
+
+func NewMismatchKeyTypeError(key1, key2 string) MismatchKeyTypeError {
+	return MismatchKeyTypeError{key1, key2}
 }
