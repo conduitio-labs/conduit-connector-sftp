@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sftp
+package destination
 
 import (
 	"bytes"
@@ -60,7 +60,8 @@ func (d *Destination) Configure(ctx context.Context, cfg commonsConfig.Config) e
 	return nil
 }
 
-func (d *Destination) Open(_ context.Context) error {
+func (d *Destination) Open(ctx context.Context) error {
+	sdk.Logger(ctx).Info().Msg("Opening a SFTP Destination...")
 	sshConfig, err := d.sshConfigAuth()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH config: %w", err)
@@ -101,9 +102,10 @@ func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, e
 	return len(records), nil
 }
 
-func (d *Destination) Teardown(_ context.Context) error {
-	var errs []error
+func (d *Destination) Teardown(ctx context.Context) error {
+	sdk.Logger(ctx).Info().Msg("Tearing down the SFTP Destination")
 
+	var errs []error
 	if d.sftpClient != nil {
 		if err := d.sftpClient.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close SFTP client: %w", err))

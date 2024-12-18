@@ -10,7 +10,7 @@ import (
 const (
 	ConfigAddress        = "address"
 	ConfigDirectoryPath  = "directoryPath"
-	ConfigPassphrase     = "passphrase"
+	ConfigHostKey        = "hostKey"
 	ConfigPassword       = "password"
 	ConfigPrivateKeyPath = "privateKeyPath"
 	ConfigUsername       = "username"
@@ -34,15 +34,17 @@ func (Config) Parameters() map[string]config.Parameter {
 				config.ValidationRequired{},
 			},
 		},
-		ConfigPassphrase: {
+		ConfigHostKey: {
 			Default:     "",
-			Description: "Passphrase is required if private key is protected with passphrase.",
+			Description: "HostKey is the key used for host key callback validation.",
 			Type:        config.ParameterTypeString,
-			Validations: []config.Validation{},
+			Validations: []config.Validation{
+				config.ValidationRequired{},
+			},
 		},
 		ConfigPassword: {
 			Default:     "",
-			Description: "Password is the SFTP password (required with username).",
+			Description: "Password is the SFTP password (can be used as passphrase for private key).",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{},
 		},

@@ -27,7 +27,7 @@ type Config struct {
 	// Address is the address of the sftp server to connect.
 	Address string `json:"address" validate:"required"`
 	// HostKey is the key used for host key callback validation.
-	HostKey string `json:"hostkey" validate:"required"`
+	HostKey string `json:"hostKey" validate:"required"`
 	// User is the SFTP user.
 	Username string `json:"username" validate:"required"`
 	// Password is the SFTP password (can be used as passphrase for private key).
