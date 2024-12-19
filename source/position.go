@@ -22,9 +22,18 @@ import (
 	"github.com/conduitio/conduit-commons/opencdc"
 )
 
+// ChunkInfo stores information about file chunks.
+type ChunkInfo struct {
+	Filename    string `json:"filename"`
+	ChunkIndex  int    `json:"chunkIndex"`
+	TotalChunks int    `json:"totalChunks"`
+	ModTime     string `json:"modTime"`
+}
+
 // Position represents SFTP's position.
 type Position struct {
-	LastProcessedFileTimestamp time.Time `json:"lastProcessedFileTimestamp"`
+	LastProcessedFileTimestamp time.Time  `json:"lastProcessedFileTimestamp"`
+	ChunkInfo                  *ChunkInfo `json:"chunkInfo,omitempty"`
 }
 
 // ParseSDKPosition parses opencdc.Position and returns Position.

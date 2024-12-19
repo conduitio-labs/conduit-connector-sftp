@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -30,6 +31,8 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
+
+const maxChunkSize = 3 * 1024 * 1024 // 3MB chunks to stay safely under the 4MB gRPC limit
 
 type fileInfo struct {
 	name    string
@@ -141,43 +144,119 @@ func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
 	}
 	defer file.Close()
 
+	// Get file size
+	fileStats, err := file.Stat()
+	if err != nil {
+		return opencdc.Record{}, fmt.Errorf("get file stats: %w", err)
+	}
+
+	fileSize := fileStats.Size()
+
+	// If file is smaller than chunk size, process normally
+	if fileSize <= maxChunkSize {
+		return iter.processSmallFile(file, fileInfo, fullPath)
+	}
+
+	// Process large file in chunks
+	return iter.processLargeFile(file, fileInfo, fullPath, fileSize)
+}
+
+func (iter *Iterator) processSmallFile(file io.Reader, fileInfo fileInfo, fullPath string) (opencdc.Record, error) {
 	content, err := io.ReadAll(file)
 	if err != nil {
 		return opencdc.Record{}, fmt.Errorf("read file: %w", err)
 	}
 
-	// Create record metadata
-	metadata := opencdc.Metadata{
-		opencdc.MetadataCollection: iter.config.DirectoryPath,
-		opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
-		"filename":                 fileInfo.name,
-		"source_path":              fullPath,
-		"file_size":                fmt.Sprintf("%d", len(content)),
-		"mod_time":                 fileInfo.modTime.Format(time.RFC3339),
-	}
+	metadata := iter.createMetadata(fileInfo, fullPath, len(content))
+	position := &Position{LastProcessedFileTimestamp: fileInfo.modTime}
 
-	// Create record position
-	position := &Position{
-		LastProcessedFileTimestamp: fileInfo.modTime,
-	}
 	positionBytes, err := json.Marshal(position)
 	if err != nil {
 		return opencdc.Record{}, fmt.Errorf("marshal position: %w", err)
 	}
 
-	// update record position
 	iter.position = position
-
-	// remove processed file
 	iter.files = iter.files[1:]
 
-	// Create OpenCDC record
 	return sdk.Util.Source.NewRecordCreate(
 		positionBytes,
 		metadata,
 		opencdc.StructuredData{"filename": fileInfo.name},
 		opencdc.RawData(content),
 	), nil
+}
+
+func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fullPath string, fileSize int64) (opencdc.Record, error) {
+	totalChunks := int(math.Ceil(float64(fileSize) / float64(maxChunkSize)))
+
+	chunkIndex := 0
+	if iter.position.ChunkInfo != nil &&
+		iter.position.ChunkInfo.Filename == fileInfo.name {
+		chunkIndex = iter.position.ChunkInfo.ChunkIndex + 1
+	}
+
+	// If we've processed all chunks, move to next file
+	if chunkIndex >= totalChunks {
+		iter.files = iter.files[1:]
+		iter.position.ChunkInfo = nil
+		return opencdc.Record{}, sdk.ErrBackoffRetry
+	}
+
+	// Seek to current chunk position
+	offset := int64(chunkIndex * maxChunkSize)
+	_, err := file.Seek(offset, io.SeekStart)
+	if err != nil {
+		return opencdc.Record{}, fmt.Errorf("seek file: %w", err)
+	}
+
+	// Read chunk
+	chunkSize := int(math.Min(float64(maxChunkSize), float64(fileSize-offset)))
+	chunk := make([]byte, chunkSize)
+	_, err = io.ReadFull(file, chunk)
+	if err != nil {
+		return opencdc.Record{}, fmt.Errorf("read chunk: %w", err)
+	}
+
+	position := &Position{
+		LastProcessedFileTimestamp: fileInfo.modTime,
+		ChunkInfo: &ChunkInfo{
+			Filename:    fileInfo.name,
+			ChunkIndex:  chunkIndex,
+			TotalChunks: totalChunks,
+			ModTime:     fileInfo.modTime.Format(time.RFC3339),
+		},
+	}
+
+	positionBytes, err := json.Marshal(position)
+	if err != nil {
+		return opencdc.Record{}, fmt.Errorf("marshal position: %w", err)
+	}
+
+	iter.position = position
+
+	// Add chunk information to metadata
+	metadata := iter.createMetadata(fileInfo, fullPath, len(chunk))
+	metadata["chunk_index"] = fmt.Sprintf("%d", chunkIndex)
+	metadata["total_chunks"] = fmt.Sprintf("%d", totalChunks)
+	metadata["is_chunked"] = "true"
+
+	return sdk.Util.Source.NewRecordCreate(
+		positionBytes,
+		metadata,
+		opencdc.StructuredData{"filename": fileInfo.name},
+		opencdc.RawData(chunk),
+	), nil
+}
+
+func (iter *Iterator) createMetadata(fileInfo fileInfo, fullPath string, contentLength int) opencdc.Metadata {
+	return opencdc.Metadata{
+		opencdc.MetadataCollection: iter.config.DirectoryPath,
+		opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		"filename":                 fileInfo.name,
+		"source_path":              fullPath,
+		"file_size":                fmt.Sprintf("%d", contentLength),
+		"mod_time":                 fileInfo.modTime.Format(time.RFC3339),
+	}
 }
 
 // loadFiles finds files matching the pattern that haven't been processed.
