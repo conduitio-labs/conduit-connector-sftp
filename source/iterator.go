@@ -46,7 +46,7 @@ type Iterator struct {
 	wg         *sync.WaitGroup
 }
 
-// NewTableIterator creates a new iterator goroutine and polls redshift for new records.
+// NewIterator creates a new iterator goroutine and polls SFTP for new records.
 func NewIterator(
 	ctx context.Context,
 	sshClient *ssh.Client,
@@ -75,7 +75,7 @@ func NewIterator(
 	return nil
 }
 
-// start polls redshift for new records and writes it into the source channel.
+// start polls sftp for new records and writes it into the source channel.
 func (iter *Iterator) start(ctx context.Context) {
 	defer iter.wg.Done()
 
@@ -206,7 +206,7 @@ func (iter *Iterator) loadFiles() error {
 		}
 	}
 
-	// Sort unprocessed files by modification time in ascending order
+	// Sort unprocessed files by modification time to maintain order
 	sort.Slice(unprocessedFiles, func(i, j int) bool {
 		return unprocessedFiles[i].modTime.Before(unprocessedFiles[j].modTime)
 	})
