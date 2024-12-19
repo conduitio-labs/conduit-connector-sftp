@@ -16,6 +16,8 @@ package source
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,8 +33,6 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
-
-const maxChunkSize = 3 * 1024 * 1024 // 3MB chunks to stay safely under the 4MB gRPC limit
 
 type fileInfo struct {
 	name    string
@@ -144,7 +144,6 @@ func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
 	}
 	defer file.Close()
 
-	// Get file size
 	fileStats, err := file.Stat()
 	if err != nil {
 		return opencdc.Record{}, fmt.Errorf("get file stats: %w", err)
@@ -152,16 +151,13 @@ func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
 
 	fileSize := fileStats.Size()
 
-	// If file is smaller than chunk size, process normally
-	if fileSize <= maxChunkSize {
-		return iter.processSmallFile(file, fileInfo, fullPath)
+	if fileSize >= iter.config.MaxChunkSizeBytes {
+		return iter.processLargeFile(file, fileInfo, fullPath, fileSize)
 	}
-
-	// Process large file in chunks
-	return iter.processLargeFile(file, fileInfo, fullPath, fileSize)
+	return iter.processFile(file, fileInfo, fullPath)
 }
 
-func (iter *Iterator) processSmallFile(file io.Reader, fileInfo fileInfo, fullPath string) (opencdc.Record, error) {
+func (iter *Iterator) processFile(file io.Reader, fileInfo fileInfo, fullPath string) (opencdc.Record, error) {
 	content, err := io.ReadAll(file)
 	if err != nil {
 		return opencdc.Record{}, fmt.Errorf("read file: %w", err)
@@ -187,7 +183,7 @@ func (iter *Iterator) processSmallFile(file io.Reader, fileInfo fileInfo, fullPa
 }
 
 func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fullPath string, fileSize int64) (opencdc.Record, error) {
-	totalChunks := int(math.Ceil(float64(fileSize) / float64(maxChunkSize)))
+	totalChunks := int(math.Ceil(float64(fileSize) / float64(iter.config.MaxChunkSizeBytes)))
 
 	chunkIndex := 0
 	if iter.position.ChunkInfo != nil &&
@@ -203,14 +199,14 @@ func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fu
 	}
 
 	// Seek to current chunk position
-	offset := int64(chunkIndex * maxChunkSize)
+	offset := int64(chunkIndex) * iter.config.MaxChunkSizeBytes
 	_, err := file.Seek(offset, io.SeekStart)
 	if err != nil {
 		return opencdc.Record{}, fmt.Errorf("seek file: %w", err)
 	}
 
 	// Read chunk
-	chunkSize := int(math.Min(float64(maxChunkSize), float64(fileSize-offset)))
+	chunkSize := int(math.Min(float64(iter.config.MaxChunkSizeBytes), float64(fileSize-offset)))
 	chunk := make([]byte, chunkSize)
 	_, err = io.ReadFull(file, chunk)
 	if err != nil {
@@ -238,6 +234,7 @@ func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fu
 	metadata := iter.createMetadata(fileInfo, fullPath, len(chunk))
 	metadata["chunk_index"] = fmt.Sprintf("%d", chunkIndex)
 	metadata["total_chunks"] = fmt.Sprintf("%d", totalChunks)
+	metadata["hash"] = hash(fileInfo.modTime.Format(time.RFC3339))
 	metadata["is_chunked"] = "true"
 
 	return sdk.Util.Source.NewRecordCreate(
@@ -293,4 +290,11 @@ func (iter *Iterator) loadFiles() error {
 	iter.files = unprocessedFiles
 
 	return nil
+}
+
+// hash creates a unique identifier for a file based on its modification time.
+func hash(modTime string) string {
+	h := sha256.New()
+	h.Write([]byte(modTime))
+	return hex.EncodeToString(h.Sum(nil))
 }

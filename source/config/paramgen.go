@@ -8,14 +8,15 @@ import (
 )
 
 const (
-	ConfigAddress        = "address"
-	ConfigDirectoryPath  = "directoryPath"
-	ConfigFilePattern    = "filePattern"
-	ConfigHostKey        = "hostKey"
-	ConfigPassword       = "password"
-	ConfigPollingPeriod  = "pollingPeriod"
-	ConfigPrivateKeyPath = "privateKeyPath"
-	ConfigUsername       = "username"
+	ConfigAddress           = "address"
+	ConfigDirectoryPath     = "directoryPath"
+	ConfigFilePattern       = "filePattern"
+	ConfigHostKey           = "hostKey"
+	ConfigMaxChunkSizeBytes = "maxChunkSizeBytes"
+	ConfigPassword          = "password"
+	ConfigPollingPeriod     = "pollingPeriod"
+	ConfigPrivateKeyPath    = "privateKeyPath"
+	ConfigUsername          = "username"
 )
 
 func (Config) Parameters() map[string]config.Parameter {
@@ -49,6 +50,12 @@ func (Config) Parameters() map[string]config.Parameter {
 			Validations: []config.Validation{
 				config.ValidationRequired{},
 			},
+		},
+		ConfigMaxChunkSizeBytes: {
+			Default:     "3145728",
+			Description: "",
+			Type:        config.ParameterTypeInt,
+			Validations: []config.Validation{},
 		},
 		ConfigPassword: {
 			Default:     "",
