@@ -16,7 +16,7 @@ package source
 
 import (
 	"context"
-	"crypto/sha256"
+	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -40,6 +40,7 @@ type fileInfo struct {
 }
 
 type Iterator struct {
+	ctx        context.Context
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
 	position   *Position
@@ -60,6 +61,7 @@ func NewIterator(
 	wg *sync.WaitGroup,
 ) error {
 	iter := &Iterator{
+		ctx:        ctx,
 		sshClient:  sshClient,
 		sftpClient: sftpClient,
 		position:   position,
@@ -73,26 +75,26 @@ func NewIterator(
 		return fmt.Errorf("list files: %w", err)
 	}
 
-	go iter.start(ctx)
+	go iter.start()
 
 	return nil
 }
 
 // start polls sftp for new records and writes it into the source channel.
-func (iter *Iterator) start(ctx context.Context) {
+func (iter *Iterator) start() {
 	defer iter.wg.Done()
 
 	for {
 		hasNext, err := iter.hasNext()
 		if err != nil {
-			sdk.Logger(ctx).Err(err).Msg("iterator shutting down...")
+			sdk.Logger(iter.ctx).Err(err).Msg("iterator shutting down...")
 			return //nolint:nlreturn // compact code style
 		}
 
 		if !hasNext {
 			select {
-			case <-ctx.Done():
-				sdk.Logger(ctx).Debug().Msg("context cancelled, iterator shutting down...")
+			case <-iter.ctx.Done():
+				sdk.Logger(iter.ctx).Debug().Msg("context cancelled, iterator shutting down...")
 				return //nolint:nlreturn // compact code style
 
 			case <-time.After(iter.config.PollingPeriod):
@@ -100,17 +102,17 @@ func (iter *Iterator) start(ctx context.Context) {
 			}
 		}
 
-		record, err := iter.next(ctx)
+		record, err := iter.next()
 		if err != nil {
-			sdk.Logger(ctx).Err(err).Msg("iterator shutting down...")
+			sdk.Logger(iter.ctx).Err(err).Msg("iterator shutting down...")
 			return //nolint:nlreturn // compact code style
 		}
 
 		select {
 		case iter.ch <- record:
 
-		case <-ctx.Done():
-			sdk.Logger(ctx).Debug().Msg("context cancelled, iterator shutting down...")
+		case <-iter.ctx.Done():
+			sdk.Logger(iter.ctx).Debug().Msg("context cancelled, iterator shutting down...")
 			return //nolint:nlreturn // compact code style
 		}
 	}
@@ -134,7 +136,7 @@ func (iter *Iterator) hasNext() (bool, error) {
 }
 
 // next returns the next record.
-func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
+func (iter *Iterator) next() (opencdc.Record, error) {
 	fileInfo := iter.files[0]
 	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
 
@@ -185,64 +187,76 @@ func (iter *Iterator) processFile(file io.Reader, fileInfo fileInfo, fullPath st
 func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fullPath string, fileSize int64) (opencdc.Record, error) {
 	totalChunks := int(math.Ceil(float64(fileSize) / float64(iter.config.FileChunkSizeBytes)))
 
-	chunkIndex := 0
-	if iter.position.ChunkInfo != nil &&
-		iter.position.ChunkInfo.Filename == fileInfo.name {
-		chunkIndex = iter.position.ChunkInfo.ChunkIndex + 1
+	startChunkIndex := 1
+	if iter.position.ChunkInfo != nil && iter.position.ChunkInfo.Filename == fileInfo.name {
+		startChunkIndex = iter.position.ChunkInfo.ChunkIndex
 	}
 
-	// If we've processed all chunks, move to next file
-	if chunkIndex >= totalChunks {
-		iter.files = iter.files[1:]
-		iter.position.ChunkInfo = nil
-		return opencdc.Record{}, sdk.ErrBackoffRetry
+	// Process all remaining chunks for this file
+	for chunkIndex := startChunkIndex; chunkIndex <= totalChunks; chunkIndex++ {
+		// Seek to current chunk position
+		offset := int64(chunkIndex-1) * iter.config.FileChunkSizeBytes
+		_, err := file.Seek(offset, io.SeekStart)
+		if err != nil {
+			return opencdc.Record{}, fmt.Errorf("seek file: %w", err)
+		}
+
+		// Read chunk
+		chunkSize := int(math.Min(float64(iter.config.FileChunkSizeBytes), float64(fileSize-offset)))
+		chunk := make([]byte, chunkSize)
+		_, err = io.ReadFull(file, chunk)
+		if err != nil {
+			return opencdc.Record{}, fmt.Errorf("read chunk: %w", err)
+		}
+
+		position := &Position{
+			LastProcessedFileTimestamp: fileInfo.modTime,
+			ChunkInfo: &ChunkInfo{
+				Filename:    fileInfo.name,
+				ChunkIndex:  chunkIndex,
+				TotalChunks: totalChunks,
+				ModTime:     fileInfo.modTime.Format(time.RFC3339),
+			},
+		}
+
+		positionBytes, err := json.Marshal(position)
+		if err != nil {
+			return opencdc.Record{}, fmt.Errorf("marshal position: %w", err)
+		}
+
+		iter.position = position
+
+		// Add chunk information to metadata
+		metadata := iter.createMetadata(fileInfo, fullPath, len(chunk))
+		metadata["chunk_index"] = fmt.Sprintf("%d", chunkIndex)
+		metadata["total_chunks"] = fmt.Sprintf("%d", totalChunks)
+		metadata["hash"] = hash(fileInfo.modTime.Format(time.RFC3339))
+		metadata["is_chunked"] = "true"
+
+		record := sdk.Util.Source.NewRecordCreate(
+			positionBytes,
+			metadata,
+			opencdc.StructuredData{"filename": fileInfo.name},
+			opencdc.RawData(chunk),
+		)
+
+		// If this isn't the last chunk, send directly to channel
+		if chunkIndex < totalChunks-1 {
+			select {
+			case iter.ch <- record:
+			case <-iter.ctx.Done():
+				return opencdc.Record{}, fmt.Errorf("context cancelled while processing chunks")
+			}
+		} else {
+			// For the last chunk, move to next file and return the record
+			iter.files = iter.files[1:]
+			iter.position.ChunkInfo = nil
+			return record, nil
+		}
 	}
 
-	// Seek to current chunk position
-	offset := int64(chunkIndex) * iter.config.FileChunkSizeBytes
-	_, err := file.Seek(offset, io.SeekStart)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("seek file: %w", err)
-	}
-
-	// Read chunk
-	chunkSize := int(math.Min(float64(iter.config.FileChunkSizeBytes), float64(fileSize-offset)))
-	chunk := make([]byte, chunkSize)
-	_, err = io.ReadFull(file, chunk)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("read chunk: %w", err)
-	}
-
-	position := &Position{
-		LastProcessedFileTimestamp: fileInfo.modTime,
-		ChunkInfo: &ChunkInfo{
-			Filename:    fileInfo.name,
-			ChunkIndex:  chunkIndex,
-			TotalChunks: totalChunks,
-			ModTime:     fileInfo.modTime.Format(time.RFC3339),
-		},
-	}
-
-	positionBytes, err := json.Marshal(position)
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("marshal position: %w", err)
-	}
-
-	iter.position = position
-
-	// Add chunk information to metadata
-	metadata := iter.createMetadata(fileInfo, fullPath, len(chunk))
-	metadata["chunk_index"] = fmt.Sprintf("%d", chunkIndex)
-	metadata["total_chunks"] = fmt.Sprintf("%d", totalChunks)
-	metadata["hash"] = hash(fileInfo.modTime.Format(time.RFC3339))
-	metadata["is_chunked"] = "true"
-
-	return sdk.Util.Source.NewRecordCreate(
-		positionBytes,
-		metadata,
-		opencdc.StructuredData{"filename": fileInfo.name},
-		opencdc.RawData(chunk),
-	), nil
+	// This should never be reached as we always return in the loop
+	return opencdc.Record{}, fmt.Errorf("unexpected end of processLargeFile")
 }
 
 func (iter *Iterator) createMetadata(fileInfo fileInfo, fullPath string, contentLength int) opencdc.Metadata {
@@ -294,7 +308,7 @@ func (iter *Iterator) loadFiles() error {
 
 // hash creates a unique identifier for a file based on its modification time.
 func hash(modTime string) string {
-	h := sha256.New()
+	h := md5.New()
 	h.Write([]byte(modTime))
 	return hex.EncodeToString(h.Sum(nil))
 }
