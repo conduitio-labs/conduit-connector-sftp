@@ -95,6 +95,15 @@ func (d *Destination) Open(ctx context.Context) error {
 
 func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, error) {
 	for i, record := range records {
+		chunked, ok := record.Metadata["is_chunked"]
+		if ok && chunked == "true" {
+			err := d.handleChunkedRecord(record)
+			if err != nil {
+				return i, err
+			}
+			continue
+		}
+
 		filename, ok := record.Metadata["filename"]
 		if !ok {
 			filename = string(record.Key.Bytes())
@@ -107,6 +116,59 @@ func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, e
 	}
 
 	return len(records), nil
+}
+
+func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
+	index, ok := record.Metadata["chunk_index"]
+	if !ok {
+		return NewInvalidChunkError("chunk_index not found")
+	}
+
+	totalChunks, ok := record.Metadata["total_chunks"]
+	if !ok {
+		return NewInvalidChunkError("total_chunk not found")
+	}
+
+	hash, ok := record.Metadata["hash"]
+	if !ok {
+		return NewInvalidChunkError("hash not found")
+	}
+
+	var remoteFile *sftp.File
+	var err error
+	path := fmt.Sprintf("%s/%s.tmp", d.config.DirectoryPath, hash)
+	if index == "1" {
+		remoteFile, err = d.sftpClient.Create(path)
+		if err != nil {
+			return fmt.Errorf("failed to create remote file: %w", err)
+		}
+	} else {
+		remoteFile, err = d.sftpClient.OpenFile(path, os.O_WRONLY|os.O_APPEND)
+		if err != nil {
+			return fmt.Errorf("failed to open remote file: %w", err)
+		}
+	}
+
+	reader := bytes.NewReader(record.Payload.After.Bytes())
+	_, err = reader.WriteTo(remoteFile)
+	if err != nil {
+		return fmt.Errorf("failed to write content to remote file: %w", err)
+	}
+	remoteFile.Close()
+
+	if index == totalChunks {
+		filename, ok := record.Metadata["filename"]
+		if !ok {
+			filename = string(record.Key.Bytes())
+		}
+
+		err = d.sftpClient.Rename(path, fmt.Sprintf("%s/%s", d.config.DirectoryPath, filename))
+		if err != nil {
+			return fmt.Errorf("failed to rename remote file: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (d *Destination) Teardown(ctx context.Context) error {

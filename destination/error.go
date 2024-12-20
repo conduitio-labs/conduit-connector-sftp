@@ -31,3 +31,15 @@ func (e MismatchKeyTypeError) Error() string {
 func NewMismatchKeyTypeError(key1, key2 string) MismatchKeyTypeError {
 	return MismatchKeyTypeError{key1, key2}
 }
+
+type InvalidChunkError struct {
+	message string
+}
+
+func (e InvalidChunkError) Error() string {
+	return fmt.Sprintf("invalid chunk: %s", e.message)
+}
+
+func NewInvalidChunkError(msg string) InvalidChunkError {
+	return InvalidChunkError{msg}
+}
