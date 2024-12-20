@@ -27,6 +27,7 @@ The source SFTP connector monitors a directory on an SFTP server for files match
 | `directoryPath` | DirectoryPath is the path to the directory to read data. | **true** |  |
 | `filePattern` | Pattern to match files that should be read (e.g., "*.txt") | false | `*` |
 | `pollingPeriod` | Duration for polling SFTP for fetching new records. | false | `5s` |
+| `fileChunkSizeBytes` | Maximum size of a file chunk in bytes to split large files. | false | `3145728` |
 
 ## Destination
 

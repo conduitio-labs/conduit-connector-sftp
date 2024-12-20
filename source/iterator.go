@@ -151,7 +151,7 @@ func (iter *Iterator) next(_ context.Context) (opencdc.Record, error) {
 
 	fileSize := fileStats.Size()
 
-	if fileSize >= iter.config.MaxChunkSizeBytes {
+	if fileSize >= iter.config.FileChunkSizeBytes {
 		return iter.processLargeFile(file, fileInfo, fullPath, fileSize)
 	}
 	return iter.processFile(file, fileInfo, fullPath)
@@ -183,7 +183,7 @@ func (iter *Iterator) processFile(file io.Reader, fileInfo fileInfo, fullPath st
 }
 
 func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fullPath string, fileSize int64) (opencdc.Record, error) {
-	totalChunks := int(math.Ceil(float64(fileSize) / float64(iter.config.MaxChunkSizeBytes)))
+	totalChunks := int(math.Ceil(float64(fileSize) / float64(iter.config.FileChunkSizeBytes)))
 
 	chunkIndex := 0
 	if iter.position.ChunkInfo != nil &&
@@ -199,14 +199,14 @@ func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fu
 	}
 
 	// Seek to current chunk position
-	offset := int64(chunkIndex) * iter.config.MaxChunkSizeBytes
+	offset := int64(chunkIndex) * iter.config.FileChunkSizeBytes
 	_, err := file.Seek(offset, io.SeekStart)
 	if err != nil {
 		return opencdc.Record{}, fmt.Errorf("seek file: %w", err)
 	}
 
 	// Read chunk
-	chunkSize := int(math.Min(float64(iter.config.MaxChunkSizeBytes), float64(fileSize-offset)))
+	chunkSize := int(math.Min(float64(iter.config.FileChunkSizeBytes), float64(fileSize-offset)))
 	chunk := make([]byte, chunkSize)
 	_, err = io.ReadFull(file, chunk)
 	if err != nil {

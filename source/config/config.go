@@ -30,8 +30,8 @@ type Config struct {
 	FilePattern string `json:"filePattern" default:"*"`
 	// This period is used by iterator to poll for new data at regular intervals.
 	PollingPeriod time.Duration `json:"pollingPeriod" default:"5s"`
-	// Maximum chunk size in bytes to avoid exceeding gRPC message size limits, default is 3MB.
-	MaxChunkSizeBytes int64 `json:"maxChunkSizeBytes" default:"3145728"`
+	// Maximum size of a file chunk in bytes to split large files, default is 3MB.
+	FileChunkSizeBytes int64 `json:"fileChunkSizeBytes" default:"3145728"`
 }
 
 // Validate executes manual validations.
