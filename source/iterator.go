@@ -16,9 +16,10 @@ package source
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" //nolint: gosec // MD5 used for non-cryptographic unique identifier
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -34,13 +35,18 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+var (
+	ErrChunkProcessingCancelled         = errors.New("context cancelled while processing chunks")
+	ErrLargeFileProcessingUnexpectedEnd = errors.New("unexpected end during large file processing")
+)
+
 type fileInfo struct {
 	name    string
+	size    int64
 	modTime time.Time
 }
 
 type Iterator struct {
-	ctx        context.Context
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
 	position   *Position
@@ -61,7 +67,6 @@ func NewIterator(
 	wg *sync.WaitGroup,
 ) error {
 	iter := &Iterator{
-		ctx:        ctx,
 		sshClient:  sshClient,
 		sftpClient: sftpClient,
 		position:   position,
@@ -75,26 +80,26 @@ func NewIterator(
 		return fmt.Errorf("list files: %w", err)
 	}
 
-	go iter.start()
+	go iter.start(ctx)
 
 	return nil
 }
 
 // start polls sftp for new records and writes it into the source channel.
-func (iter *Iterator) start() {
+func (iter *Iterator) start(ctx context.Context) {
 	defer iter.wg.Done()
 
 	for {
 		hasNext, err := iter.hasNext()
 		if err != nil {
-			sdk.Logger(iter.ctx).Err(err).Msg("iterator shutting down...")
+			sdk.Logger(ctx).Err(err).Msg("iterator shutting down...")
 			return //nolint:nlreturn // compact code style
 		}
 
 		if !hasNext {
 			select {
-			case <-iter.ctx.Done():
-				sdk.Logger(iter.ctx).Debug().Msg("context cancelled, iterator shutting down...")
+			case <-ctx.Done():
+				sdk.Logger(ctx).Debug().Msg("context cancelled, iterator shutting down...")
 				return //nolint:nlreturn // compact code style
 
 			case <-time.After(iter.config.PollingPeriod):
@@ -102,17 +107,17 @@ func (iter *Iterator) start() {
 			}
 		}
 
-		record, err := iter.next()
+		record, err := iter.next(ctx)
 		if err != nil {
-			sdk.Logger(iter.ctx).Err(err).Msg("iterator shutting down...")
+			sdk.Logger(ctx).Err(err).Msg("iterator shutting down...")
 			return //nolint:nlreturn // compact code style
 		}
 
 		select {
 		case iter.ch <- record:
 
-		case <-iter.ctx.Done():
-			sdk.Logger(iter.ctx).Debug().Msg("context cancelled, iterator shutting down...")
+		case <-ctx.Done():
+			sdk.Logger(ctx).Debug().Msg("context cancelled, iterator shutting down...")
 			return //nolint:nlreturn // compact code style
 		}
 	}
@@ -136,8 +141,16 @@ func (iter *Iterator) hasNext() (bool, error) {
 }
 
 // next returns the next record.
-func (iter *Iterator) next() (opencdc.Record, error) {
+func (iter *Iterator) next(ctx context.Context) (opencdc.Record, error) {
 	fileInfo := iter.files[0]
+
+	if fileInfo.size >= iter.config.FileChunkSizeBytes {
+		return iter.processLargeFile(ctx, fileInfo)
+	}
+	return iter.processFile(fileInfo)
+}
+
+func (iter *Iterator) processFile(fileInfo fileInfo) (opencdc.Record, error) {
 	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
 
 	file, err := iter.sftpClient.Open(fullPath)
@@ -146,20 +159,6 @@ func (iter *Iterator) next() (opencdc.Record, error) {
 	}
 	defer file.Close()
 
-	fileStats, err := file.Stat()
-	if err != nil {
-		return opencdc.Record{}, fmt.Errorf("get file stats: %w", err)
-	}
-
-	fileSize := fileStats.Size()
-
-	if fileSize >= iter.config.FileChunkSizeBytes {
-		return iter.processLargeFile(file, fileInfo, fullPath, fileSize)
-	}
-	return iter.processFile(file, fileInfo, fullPath)
-}
-
-func (iter *Iterator) processFile(file io.Reader, fileInfo fileInfo, fullPath string) (opencdc.Record, error) {
 	content, err := io.ReadAll(file)
 	if err != nil {
 		return opencdc.Record{}, fmt.Errorf("read file: %w", err)
@@ -184,29 +183,32 @@ func (iter *Iterator) processFile(file io.Reader, fileInfo fileInfo, fullPath st
 	), nil
 }
 
-func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fullPath string, fileSize int64) (opencdc.Record, error) {
-	totalChunks := int(math.Ceil(float64(fileSize) / float64(iter.config.FileChunkSizeBytes)))
+func (iter *Iterator) processLargeFile(ctx context.Context, fileInfo fileInfo) (opencdc.Record, error) {
+	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
+
+	file, err := iter.sftpClient.Open(fullPath)
+	if err != nil {
+		return opencdc.Record{}, fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	totalChunks := int(math.Ceil(float64(fileInfo.size) / float64(iter.config.FileChunkSizeBytes)))
 
 	startChunkIndex := 1
 	if iter.position.ChunkInfo != nil && iter.position.ChunkInfo.Filename == fileInfo.name {
 		startChunkIndex = iter.position.ChunkInfo.ChunkIndex
 	}
 
-	// Process all remaining chunks for this file
-	for chunkIndex := startChunkIndex; chunkIndex <= totalChunks; chunkIndex++ {
-		// Seek to current chunk position
-		offset := int64(chunkIndex-1) * iter.config.FileChunkSizeBytes
-		_, err := file.Seek(offset, io.SeekStart)
-		if err != nil {
-			return opencdc.Record{}, fmt.Errorf("seek file: %w", err)
-		}
+	return iter.processChunks(ctx, file, fileInfo, startChunkIndex, totalChunks)
+}
 
-		// Read chunk
-		chunkSize := int(math.Min(float64(iter.config.FileChunkSizeBytes), float64(fileSize-offset)))
-		chunk := make([]byte, chunkSize)
-		_, err = io.ReadFull(file, chunk)
+func (iter *Iterator) processChunks(ctx context.Context, file *sftp.File, fileInfo fileInfo, startChunkIndex, totalChunks int) (opencdc.Record, error) {
+	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
+
+	for chunkIndex := startChunkIndex; chunkIndex <= totalChunks; chunkIndex++ {
+		chunk, err := iter.readChunk(file, fileInfo.size, chunkIndex)
 		if err != nil {
-			return opencdc.Record{}, fmt.Errorf("read chunk: %w", err)
+			return opencdc.Record{}, err
 		}
 
 		position := &Position{
@@ -241,11 +243,11 @@ func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fu
 		)
 
 		// If this isn't the last chunk, send directly to channel
-		if chunkIndex < totalChunks-1 {
+		if chunkIndex < totalChunks {
 			select {
 			case iter.ch <- record:
-			case <-iter.ctx.Done():
-				return opencdc.Record{}, fmt.Errorf("context cancelled while processing chunks")
+			case <-ctx.Done():
+				return opencdc.Record{}, ErrChunkProcessingCancelled
 			}
 		} else {
 			// For the last chunk, move to next file and return the record
@@ -256,7 +258,24 @@ func (iter *Iterator) processLargeFile(file io.ReadSeeker, fileInfo fileInfo, fu
 	}
 
 	// This should never be reached as we always return in the loop
-	return opencdc.Record{}, fmt.Errorf("unexpected end of processLargeFile")
+	return opencdc.Record{}, ErrLargeFileProcessingUnexpectedEnd
+}
+
+func (iter *Iterator) readChunk(file *sftp.File, fileSize int64, chunkIndex int) ([]byte, error) {
+	offset := int64(chunkIndex-1) * iter.config.FileChunkSizeBytes
+	_, err := file.Seek(offset, io.SeekStart)
+	if err != nil {
+		return nil, fmt.Errorf("seek file: %w", err)
+	}
+
+	chunkSize := int(math.Min(float64(iter.config.FileChunkSizeBytes), float64(fileSize-offset)))
+	chunk := make([]byte, chunkSize)
+	_, err = io.ReadFull(file, chunk)
+	if err != nil {
+		return nil, fmt.Errorf("read chunk: %w", err)
+	}
+
+	return chunk, nil
 }
 
 func (iter *Iterator) createMetadata(fileInfo fileInfo, fullPath string, contentLength int) opencdc.Metadata {
@@ -291,6 +310,7 @@ func (iter *Iterator) loadFiles() error {
 			modTime.After(iter.position.LastProcessedFileTimestamp) {
 			unprocessedFiles = append(unprocessedFiles, fileInfo{
 				name:    filename,
+				size:    file.Size(),
 				modTime: modTime,
 			})
 		}
@@ -308,7 +328,7 @@ func (iter *Iterator) loadFiles() error {
 
 // hash creates a unique identifier for a file based on its modification time.
 func hash(modTime string) string {
-	h := md5.New()
+	h := md5.New() //nolint: gosec // MD5 used for non-cryptographic unique identifier
 	h.Write([]byte(modTime))
 	return hex.EncodeToString(h.Sum(nil))
 }

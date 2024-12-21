@@ -31,8 +31,8 @@ import (
 )
 
 var (
-	ErrSourceNotOpened = errors.New("source not opened for reading")
-	ErrChannelClosed   = errors.New("error reading data, records channel closed unexpectedly")
+	ErrSourceNotOpened      = errors.New("source not opened for reading")
+	ErrRecordsChannelClosed = errors.New("error reading data, records channel closed unexpectedly")
 )
 
 type Source struct {
@@ -130,7 +130,7 @@ func (s *Source) Read(ctx context.Context) (opencdc.Record, error) {
 		return opencdc.Record{}, ctx.Err()
 	case record, ok := <-s.ch:
 		if !ok {
-			return opencdc.Record{}, ErrChannelClosed
+			return opencdc.Record{}, ErrRecordsChannelClosed
 		}
 		return record, nil //nolint:nlreturn // compact code style
 	default:
