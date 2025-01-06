@@ -13,7 +13,8 @@ Run `make test` to run all the unit and integration tests.
 
 ## Source
 
-The source SFTP connector monitors a directory on an SFTP server for files matching a specified pattern. It reads these files and converts them into `opencdc.Record` that can be processed by Conduit. The connector supports both password and private key authentication methods.
+The source SFTP connector monitors a directory on an SFTP server for files matching a specified pattern. It reads these files and converts them into `opencdc.Record` that can be processed by Conduit. For handling large files, it splits them into smaller chunks, enabling smooth data handling through the Conduit pipeline.
+The connector supports both password and private key authentication methods.
 
 ### Configuration Options
 
