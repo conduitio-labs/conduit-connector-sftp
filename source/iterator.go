@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -38,6 +39,7 @@ import (
 var (
 	ErrChunkProcessingCancelled         = errors.New("context cancelled while processing chunks")
 	ErrLargeFileProcessingUnexpectedEnd = errors.New("unexpected end during large file processing")
+	ErrFileModifiedDuringRead           = errors.New("file was modified during read")
 )
 
 type fileInfo struct {
@@ -109,6 +111,9 @@ func (iter *Iterator) start(ctx context.Context) {
 
 		record, err := iter.next(ctx)
 		if err != nil {
+			if errors.Is(err, ErrFileModifiedDuringRead) {
+				continue
+			}
 			sdk.Logger(ctx).Err(err).Msg("iterator shutting down...")
 			return //nolint:nlreturn // compact code style
 		}
@@ -142,16 +147,22 @@ func (iter *Iterator) hasNext() (bool, error) {
 
 // next returns the next record.
 func (iter *Iterator) next(ctx context.Context) (opencdc.Record, error) {
-	fileInfo := iter.files[0]
+	file := iter.files[0]
 
-	if fileInfo.size >= iter.config.FileChunkSizeBytes {
-		return iter.processLargeFile(ctx, fileInfo)
+	if file.size >= iter.config.FileChunkSizeBytes {
+		return iter.processLargeFile(ctx, file.name)
 	}
-	return iter.processFile(fileInfo)
+	return iter.processFile(ctx, file.name)
 }
 
-func (iter *Iterator) processFile(fileInfo fileInfo) (opencdc.Record, error) {
-	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
+func (iter *Iterator) processFile(ctx context.Context, filename string) (opencdc.Record, error) {
+	fullPath := filepath.Join(iter.config.DirectoryPath, filename)
+
+	// Get initial file stat.
+	initialStat, err := iter.sftpClient.Stat(fullPath)
+	if err != nil {
+		return opencdc.Record{}, fmt.Errorf("stat file: %w", err)
+	}
 
 	file, err := iter.sftpClient.Open(fullPath)
 	if err != nil {
@@ -164,8 +175,12 @@ func (iter *Iterator) processFile(fileInfo fileInfo) (opencdc.Record, error) {
 		return opencdc.Record{}, fmt.Errorf("read file: %w", err)
 	}
 
-	metadata := iter.createMetadata(fileInfo, fullPath, len(content))
-	position := &Position{LastProcessedFileTimestamp: fileInfo.modTime}
+	if err := iter.validateFile(ctx, initialStat, fullPath); err != nil {
+		return opencdc.Record{}, err
+	}
+
+	metadata := iter.createMetadata(initialStat, fullPath, len(content))
+	position := &Position{LastProcessedFileTimestamp: initialStat.ModTime().UTC()}
 
 	positionBytes, err := json.Marshal(position)
 	if err != nil {
@@ -178,13 +193,19 @@ func (iter *Iterator) processFile(fileInfo fileInfo) (opencdc.Record, error) {
 	return sdk.Util.Source.NewRecordCreate(
 		positionBytes,
 		metadata,
-		opencdc.StructuredData{"filename": fileInfo.name},
+		opencdc.StructuredData{"filename": filename},
 		opencdc.RawData(content),
 	), nil
 }
 
-func (iter *Iterator) processLargeFile(ctx context.Context, fileInfo fileInfo) (opencdc.Record, error) {
-	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
+func (iter *Iterator) processLargeFile(ctx context.Context, filename string) (opencdc.Record, error) {
+	fullPath := filepath.Join(iter.config.DirectoryPath, filename)
+
+	// Get initial file stat.
+	initialStat, err := iter.sftpClient.Stat(fullPath)
+	if err != nil {
+		return opencdc.Record{}, fmt.Errorf("stat file: %w", err)
+	}
 
 	file, err := iter.sftpClient.Open(fullPath)
 	if err != nil {
@@ -192,32 +213,37 @@ func (iter *Iterator) processLargeFile(ctx context.Context, fileInfo fileInfo) (
 	}
 	defer file.Close()
 
-	totalChunks := int(math.Ceil(float64(fileInfo.size) / float64(iter.config.FileChunkSizeBytes)))
+	totalChunks := int(math.Ceil(float64(initialStat.Size()) / float64(iter.config.FileChunkSizeBytes)))
 
 	startChunkIndex := 1
-	if iter.position.ChunkInfo != nil && iter.position.ChunkInfo.Filename == fileInfo.name {
+	if iter.position.ChunkInfo != nil && iter.position.ChunkInfo.Filename == filename &&
+		iter.position.ChunkInfo.ModTime == initialStat.ModTime().UTC().Format(time.RFC3339) {
 		startChunkIndex = iter.position.ChunkInfo.ChunkIndex
 	}
 
-	return iter.processChunks(ctx, file, fileInfo, startChunkIndex, totalChunks)
+	return iter.processChunks(ctx, file, initialStat, startChunkIndex, totalChunks)
 }
 
-func (iter *Iterator) processChunks(ctx context.Context, file *sftp.File, fileInfo fileInfo, startChunkIndex, totalChunks int) (opencdc.Record, error) {
-	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.name)
+func (iter *Iterator) processChunks(ctx context.Context, file *sftp.File, fileInfo os.FileInfo, startChunkIndex, totalChunks int) (opencdc.Record, error) {
+	fullPath := filepath.Join(iter.config.DirectoryPath, fileInfo.Name())
 
 	for chunkIndex := startChunkIndex; chunkIndex <= totalChunks; chunkIndex++ {
-		chunk, err := iter.readChunk(file, fileInfo.size, chunkIndex)
+		chunk, err := iter.readChunk(file, fileInfo.Size(), chunkIndex)
 		if err != nil {
 			return opencdc.Record{}, err
 		}
 
+		if err := iter.validateFile(ctx, fileInfo, fullPath); err != nil {
+			return opencdc.Record{}, err
+		}
+
 		position := &Position{
-			LastProcessedFileTimestamp: fileInfo.modTime,
+			LastProcessedFileTimestamp: fileInfo.ModTime().UTC(),
 			ChunkInfo: &ChunkInfo{
-				Filename:    fileInfo.name,
+				Filename:    fileInfo.Name(),
 				ChunkIndex:  chunkIndex,
 				TotalChunks: totalChunks,
-				ModTime:     fileInfo.modTime.Format(time.RFC3339),
+				ModTime:     fileInfo.ModTime().UTC().Format(time.RFC3339),
 			},
 		}
 
@@ -232,13 +258,13 @@ func (iter *Iterator) processChunks(ctx context.Context, file *sftp.File, fileIn
 		metadata := iter.createMetadata(fileInfo, fullPath, len(chunk))
 		metadata["chunk_index"] = fmt.Sprintf("%d", chunkIndex)
 		metadata["total_chunks"] = fmt.Sprintf("%d", totalChunks)
-		metadata["hash"] = hash(fileInfo.modTime.Format(time.RFC3339))
+		metadata["hash"] = generateFileHash(fileInfo.Name(), fileInfo.ModTime().UTC(), fileInfo.Size())
 		metadata["is_chunked"] = "true"
 
 		record := sdk.Util.Source.NewRecordCreate(
 			positionBytes,
 			metadata,
-			opencdc.StructuredData{"filename": fileInfo.name},
+			opencdc.StructuredData{"filename": fileInfo.Name()},
 			opencdc.RawData(chunk),
 		)
 
@@ -278,14 +304,14 @@ func (iter *Iterator) readChunk(file *sftp.File, fileSize int64, chunkIndex int)
 	return chunk, nil
 }
 
-func (iter *Iterator) createMetadata(fileInfo fileInfo, fullPath string, contentLength int) opencdc.Metadata {
+func (iter *Iterator) createMetadata(fileInfo os.FileInfo, fullPath string, contentLength int) opencdc.Metadata {
 	return opencdc.Metadata{
 		opencdc.MetadataCollection: iter.config.DirectoryPath,
 		opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
-		"filename":                 fileInfo.name,
+		"filename":                 fileInfo.Name(),
 		"source_path":              fullPath,
 		"file_size":                fmt.Sprintf("%d", contentLength),
-		"mod_time":                 fileInfo.modTime.Format(time.RFC3339),
+		"mod_time":                 fileInfo.ModTime().UTC().Format(time.RFC3339),
 	}
 }
 
@@ -302,14 +328,14 @@ func (iter *Iterator) loadFiles() error {
 			continue
 		}
 
-		filename := file.Name()
+		fileName := file.Name()
 		modTime := file.ModTime().UTC()
 
 		// Check file pattern match and modification time
-		if matched, _ := filepath.Match(iter.config.FilePattern, filename); matched &&
+		if matched, _ := filepath.Match(iter.config.FilePattern, fileName); matched &&
 			modTime.After(iter.position.LastProcessedFileTimestamp) {
 			unprocessedFiles = append(unprocessedFiles, fileInfo{
-				name:    filename,
+				name:    fileName,
 				size:    file.Size(),
 				modTime: modTime,
 			})
@@ -326,9 +352,26 @@ func (iter *Iterator) loadFiles() error {
 	return nil
 }
 
-// hash creates a unique identifier for a file based on its modification time.
-func hash(modTime string) string {
-	h := md5.New() //nolint: gosec // MD5 used for non-cryptographic unique identifier
-	h.Write([]byte(modTime))
-	return hex.EncodeToString(h.Sum(nil))
+// validateFile ensures file integrity during read.
+func (iter *Iterator) validateFile(ctx context.Context, fileInfo os.FileInfo, fullPath string) error {
+	finalStat, err := iter.sftpClient.Stat(fullPath)
+	if err != nil {
+		return fmt.Errorf("stat file: %w", err)
+	}
+
+	if !fileInfo.ModTime().Equal(finalStat.ModTime()) {
+		sdk.Logger(ctx).Info().Msgf(`file "%s" modified during read`, fileInfo.Name())
+		// Move modified file to the end of the queue to retry later
+		iter.files = append(iter.files[1:], iter.files[0])
+		return ErrFileModifiedDuringRead
+	}
+
+	return nil
+}
+
+// generateFileHash creates a unique hash based on file name, mod time, and size.
+func generateFileHash(fileName string, modTime time.Time, fileSize int64) string {
+	data := fmt.Sprintf("%s|%s|%d", fileName, modTime.Format(time.RFC3339), fileSize)
+	hash := md5.Sum([]byte(data)) //nolint: gosec // MD5 used for non-cryptographic unique identifier
+	return hex.EncodeToString(hash[:])
 }

@@ -92,13 +92,16 @@ func (s *Source) Open(ctx context.Context, position opencdc.Position) error {
 
 	s.sftpClient, err = sftp.NewClient(s.sshClient)
 	if err != nil {
-		s.sshClient.Close()
+		err = s.sshClient.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close SSH client: %w", err)
+		}
 		return fmt.Errorf("failed to create SFTP client: %w", err)
 	}
 
 	_, err = s.sftpClient.Stat(s.config.DirectoryPath)
 	if err != nil {
-		return fmt.Errorf("remote path does not exist: %w", err)
+		return fmt.Errorf(`remote path "%s" does not exist: %w`, s.config.DirectoryPath, err)
 	}
 
 	s.position, err = ParseSDKPosition(position)
