@@ -202,7 +202,7 @@ func TestSource_Open(t *testing.T) {
 
 		err = s.Open(ctx, nil)
 		is.True(err != nil)
-		is.Equal(err.Error(), "remote path does not exist: file does not exist")
+		is.Equal(err.Error(), `remote path "/home/root" does not exist: file does not exist`)
 	})
 }
 
