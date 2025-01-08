@@ -8,12 +8,15 @@ import (
 )
 
 const (
-	ConfigAddress        = "address"
-	ConfigDirectoryPath  = "directoryPath"
-	ConfigHostKey        = "hostKey"
-	ConfigPassword       = "password"
-	ConfigPrivateKeyPath = "privateKeyPath"
-	ConfigUsername       = "username"
+	ConfigAddress            = "address"
+	ConfigDirectoryPath      = "directoryPath"
+	ConfigFileChunkSizeBytes = "fileChunkSizeBytes"
+	ConfigFilePattern        = "filePattern"
+	ConfigHostKey            = "hostKey"
+	ConfigPassword           = "password"
+	ConfigPollingPeriod      = "pollingPeriod"
+	ConfigPrivateKeyPath     = "privateKeyPath"
+	ConfigUsername           = "username"
 )
 
 func (Config) Parameters() map[string]config.Parameter {
@@ -34,6 +37,18 @@ func (Config) Parameters() map[string]config.Parameter {
 				config.ValidationRequired{},
 			},
 		},
+		ConfigFileChunkSizeBytes: {
+			Default:     "3145728",
+			Description: "Maximum size of a file chunk in bytes to split large files, default is 3MB.",
+			Type:        config.ParameterTypeInt,
+			Validations: []config.Validation{},
+		},
+		ConfigFilePattern: {
+			Default:     "*",
+			Description: "Pattern to filter files in the source directory.",
+			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{},
+		},
 		ConfigHostKey: {
 			Default:     "",
 			Description: "HostKey is the key used for host key callback validation.",
@@ -46,6 +61,12 @@ func (Config) Parameters() map[string]config.Parameter {
 			Default:     "",
 			Description: "Password is the SFTP password (can be used as passphrase for private key).",
 			Type:        config.ParameterTypeString,
+			Validations: []config.Validation{},
+		},
+		ConfigPollingPeriod: {
+			Default:     "5s",
+			Description: "This period is used by iterator to poll for new data at regular intervals.",
+			Type:        config.ParameterTypeDuration,
 			Validations: []config.Validation{},
 		},
 		ConfigPrivateKeyPath: {
