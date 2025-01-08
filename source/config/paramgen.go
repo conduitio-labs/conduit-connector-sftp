@@ -77,7 +77,7 @@ func (Config) Parameters() map[string]config.Parameter {
 		},
 		ConfigUsername: {
 			Default:     "",
-			Description: "User is the SFTP user.",
+			Description: "User is the username of the SFTP user.",
 			Type:        config.ParameterTypeString,
 			Validations: []config.Validation{
 				config.ValidationRequired{},

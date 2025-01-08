@@ -18,20 +18,6 @@ import (
 	"fmt"
 )
 
-var ErrUntrustedKey = fmt.Errorf("host key does not match the trusted key")
-
-type MismatchKeyTypeError struct {
-	key1, key2 string
-}
-
-func (e MismatchKeyTypeError) Error() string {
-	return fmt.Sprintf("host key type mismatch: got %s, want %s", e.key1, e.key2)
-}
-
-func NewMismatchKeyTypeError(key1, key2 string) MismatchKeyTypeError {
-	return MismatchKeyTypeError{key1, key2}
-}
-
 type InvalidChunkError struct {
 	message string
 }

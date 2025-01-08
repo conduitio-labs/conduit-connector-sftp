@@ -18,9 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 
+	"github.com/conduitio-labs/conduit-connector-sftp/common"
 	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
 	commonsConfig "github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/lang"
@@ -80,7 +80,7 @@ func (s *Source) Configure(ctx context.Context, cfgRaw commonsConfig.Config) err
 
 func (s *Source) Open(ctx context.Context, position opencdc.Position) error {
 	sdk.Logger(ctx).Info().Msg("Opening a SFTP Source...")
-	sshConfig, err := s.sshConfigAuth()
+	sshConfig, err := common.SSHConfigAuth(s.config.HostKey, s.config.Username, s.config.Password, s.config.PrivateKeyPath)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH config: %w", err)
 	}
@@ -178,53 +178,4 @@ func (s *Source) Teardown(ctx context.Context) error {
 	}
 
 	return errors.Join(errs...)
-}
-
-func (s *Source) sshConfigAuth() (*ssh.ClientConfig, error) {
-	sshConfig := &ssh.ClientConfig{
-		User: s.config.Username,
-	}
-
-	//nolint:dogsled // not required here.
-	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(s.config.HostKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse host key: %w", err)
-	}
-
-	sshConfig.HostKeyCallback = ssh.FixedHostKey(hostKey)
-
-	if s.config.PrivateKeyPath != "" {
-		auth, err := s.authWithPrivateKey()
-		if err != nil {
-			return nil, err
-		}
-
-		sshConfig.Auth = []ssh.AuthMethod{auth}
-		return sshConfig, nil
-	}
-
-	sshConfig.Auth = []ssh.AuthMethod{ssh.Password(s.config.Password)}
-	return sshConfig, nil
-}
-
-func (s *Source) authWithPrivateKey() (ssh.AuthMethod, error) {
-	key, err := os.ReadFile(s.config.PrivateKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
-	}
-
-	if s.config.Password != "" {
-		signer, err := ssh.ParsePrivateKeyWithPassphrase(key, []byte(s.config.Password))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse private key: %w", err)
-		}
-		return ssh.PublicKeys(signer), nil
-	}
-
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	return ssh.PublicKeys(signer), nil
 }

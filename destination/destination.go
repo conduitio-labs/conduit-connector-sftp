@@ -19,9 +19,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 
+	"github.com/conduitio-labs/conduit-connector-sftp/common"
 	"github.com/conduitio-labs/conduit-connector-sftp/config"
 	commonsConfig "github.com/conduitio/conduit-commons/config"
 	"github.com/conduitio/conduit-commons/lang"
@@ -69,7 +69,7 @@ func (d *Destination) Configure(ctx context.Context, cfg commonsConfig.Config) e
 
 func (d *Destination) Open(ctx context.Context) error {
 	sdk.Logger(ctx).Info().Msg("Opening a SFTP Destination...")
-	sshConfig, err := d.sshConfigAuth()
+	sshConfig, err := common.SSHConfigAuth(d.config.HostKey, d.config.Username, d.config.Password, d.config.PrivateKeyPath)
 	if err != nil {
 		return fmt.Errorf("failed to create SSH config: %w", err)
 	}
@@ -106,6 +106,7 @@ func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, e
 
 		filename, ok := record.Metadata["filename"]
 		if !ok {
+			// this should never happen, record should always have the filename metadata.
 			filename = string(record.Key.Bytes())
 		}
 
@@ -116,6 +117,29 @@ func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, e
 	}
 
 	return len(records), nil
+}
+
+func (d *Destination) Teardown(ctx context.Context) error {
+	sdk.Logger(ctx).Info().Msg("Tearing down the SFTP Destination")
+
+	var errs []error
+	if d.sftpClient != nil {
+		if err := d.sftpClient.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close SFTP client: %w", err))
+		}
+	}
+
+	if d.sshClient != nil {
+		if err := d.sshClient.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close SSH client: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("error teardown: %w", errors.Join(errs...))
+	}
+
+	return nil
 }
 
 func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
@@ -159,6 +183,7 @@ func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
 	if index == totalChunks {
 		filename, ok := record.Metadata["filename"]
 		if !ok {
+			// this should never happen, record should always have the filename metadata.
 			filename = string(record.Key.Bytes())
 		}
 
@@ -169,89 +194,6 @@ func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
 	}
 
 	return nil
-}
-
-func (d *Destination) Teardown(ctx context.Context) error {
-	sdk.Logger(ctx).Info().Msg("Tearing down the SFTP Destination")
-
-	var errs []error
-	if d.sftpClient != nil {
-		if err := d.sftpClient.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close SFTP client: %w", err))
-		}
-	}
-
-	if d.sshClient != nil {
-		if err := d.sshClient.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close SSH client: %w", err))
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("error teardown: %w", errors.Join(errs...))
-	}
-
-	return nil
-}
-
-func (d *Destination) sshConfigAuth() (*ssh.ClientConfig, error) {
-	//nolint:dogsled // not required here.
-	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(d.config.HostKey))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse server public key: %w", err)
-	}
-
-	hostKeyCallback := func(_ string, _ net.Addr, key ssh.PublicKey) error {
-		if key.Type() != hostKey.Type() {
-			return NewMismatchKeyTypeError(key.Type(), hostKey.Type())
-		}
-
-		if !bytes.Equal(key.Marshal(), hostKey.Marshal()) {
-			return ErrUntrustedKey
-		}
-
-		return nil
-	}
-
-	sshConfig := &ssh.ClientConfig{
-		User:            d.config.Username,
-		HostKeyCallback: hostKeyCallback,
-	}
-
-	if d.config.PrivateKeyPath != "" {
-		auth, err := d.authWithPrivateKey()
-		if err != nil {
-			return nil, err
-		}
-
-		sshConfig.Auth = []ssh.AuthMethod{auth}
-		return sshConfig, nil
-	}
-
-	sshConfig.Auth = []ssh.AuthMethod{ssh.Password(d.config.Password)}
-	return sshConfig, nil
-}
-
-func (d *Destination) authWithPrivateKey() (ssh.AuthMethod, error) {
-	key, err := os.ReadFile(d.config.PrivateKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read private key file: %w", err)
-	}
-
-	if d.config.Password != "" {
-		signer, err := ssh.ParsePrivateKeyWithPassphrase(key, []byte(d.config.Password))
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse private key: %w", err)
-		}
-		return ssh.PublicKeys(signer), nil
-	}
-
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	return ssh.PublicKeys(signer), nil
 }
 
 func (d *Destination) uploadFile(filename string, content []byte) error {
