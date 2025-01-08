@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/config"
+	"github.com/conduitio-labs/conduit-connector-sftp/destination"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
 )
@@ -66,7 +67,11 @@ func TestAcceptance(t *testing.T) {
 	sdk.AcceptanceTest(t, &driver{
 		ConfigurableAcceptanceTestDriver: sdk.ConfigurableAcceptanceTestDriver{
 			Config: sdk.ConfigurableAcceptanceTestDriverConfig{
-				Connector: Connector,
+				Connector: sdk.Connector{
+					NewSpecification: Specification,
+					NewDestination:   destination.NewDestination,
+					NewSource:        nil,
+				},
 				DestinationConfig: map[string]string{
 					config.ConfigAddress:       "localhost:2222",
 					config.ConfigHostKey:       hostKey,
