@@ -16,9 +16,12 @@ package source
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -209,97 +212,239 @@ func TestSource_Open(t *testing.T) {
 func TestSource_Read(t *testing.T) {
 	hostKey, err := setupHostKey()
 	if err != nil {
-		fmt.Println(err)
-		return
+		t.Fatalf("failed to setup host key: %v", err)
 	}
 
-	err = writeTestFile("test.txt", "Hello World!")
-	if err != nil {
-		t.Fatal(err)
+	configuration := map[string]string{
+		"address":            "localhost:2222",
+		"hostKey":            hostKey,
+		"username":           "user",
+		"password":           "pass",
+		"directoryPath":      "/upload",
+		"filePattern":        "*",
+		"fileChunkSizeBytes": "1024",
 	}
 
-	t.Run("source read success", func(t *testing.T) {
+	t.Run("success reading new file", func(t *testing.T) {
 		is := is.New(t)
-		s := NewSource()
+
+		_, err = writeTestFile("test.txt", "Hello World!")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		s := &Source{}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		err = s.Configure(ctx, map[string]string{
-			config.ConfigAddress:       "localhost:2222",
-			config.ConfigHostKey:       hostKey,
-			config.ConfigUsername:      "user",
-			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
-		})
+		err = s.Configure(ctx, configuration)
 		is.NoErr(err)
 
 		err = s.Open(ctx, nil)
 		is.NoErr(err)
 
-		// wait for a record to be available
-		var record opencdc.Record
-		for {
-			record, err = s.Read(ctx)
-			if err == nil {
-				break
-			}
-			if !errors.Is(err, sdk.ErrBackoffRetry) {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatal("Timeout waiting for record")
-			case <-time.After(100 * time.Millisecond):
-				// short wait before retrying
-				continue
-			}
-		}
+		record, err := s.Read(ctx)
+		is.NoErr(err)
+
+		// Verify record contents
 		is.Equal(record.Operation, opencdc.OperationCreate)
-		is.Equal(record.Key, opencdc.StructuredData{"filename": "test.txt"})
-		is.Equal(record.Payload.After, opencdc.RawData([]byte("Hello World!")))
+		is.Equal(record.Metadata["filename"], "test.txt")
+		is.Equal(string(record.Payload.After.(opencdc.RawData)), "Hello World!")
+
+		// Verify position was updated
+		pos, err := ParseSDKPosition(record.Position)
+		is.NoErr(err)
+		is.True(pos.LastProcessedFileTimestamp.After(time.Time{}))
+
+		err = s.Teardown(ctx)
+		is.NoErr(err)
+
+		err = removeTestFile("test.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("no new files available", func(t *testing.T) {
+		is := is.New(t)
+		s := &Source{}
+		ctx := context.Background()
+
+		err = s.Configure(ctx, configuration)
+		is.NoErr(err)
+
+		err = s.Open(ctx, nil)
+		is.NoErr(err)
+
+		record, err := s.Read(ctx)
+		is.True(errors.Is(err, sdk.ErrBackoffRetry))
+		is.Equal(record, opencdc.Record{})
 
 		err = s.Teardown(ctx)
 		is.NoErr(err)
 	})
 
-	t.Run("source no new records to read error backoff retry", func(t *testing.T) {
+	t.Run("file pattern filtering", func(t *testing.T) {
 		is := is.New(t)
-		s := NewSource()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		s := &Source{}
+		ctx := context.Background()
+
+		// Create additional test files with different extensions
+		_, err = writeTestFile("test.csv", "1,2,3")
+		is.NoErr(err)
+		_, err = writeTestFile("test.json", `{"key": "value"}`)
+		is.NoErr(err)
 
 		err = s.Configure(ctx, map[string]string{
-			config.ConfigAddress:       "localhost:2222",
-			config.ConfigHostKey:       hostKey,
-			config.ConfigUsername:      "user",
-			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			"address":            "localhost:2222",
+			"hostKey":            hostKey,
+			"username":           "user",
+			"password":           "pass",
+			"directoryPath":      "/upload",
+			"filePattern":        "*.csv",
+			"fileChunkSizeBytes": "1024",
 		})
 		is.NoErr(err)
 
 		err = s.Open(ctx, nil)
 		is.NoErr(err)
 
-		// wait for a record to be available
-		var record opencdc.Record
+		record, err := s.Read(ctx)
+		is.NoErr(err)
+		is.Equal(record.Metadata["filename"], "test.csv")
+
+		err = s.Teardown(ctx)
+		is.NoErr(err)
+	})
+}
+
+func TestSource_ReadLargeFile(t *testing.T) {
+	hostKey, err := setupHostKey()
+	if err != nil {
+		t.Fatalf("failed to setup host key: %v", err)
+	}
+
+	// Setup a large test file that will be chunked
+	largeContent := strings.Repeat("Large file content\n", 1000)
+	stat, err := writeTestFile("large.txt", largeContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer removeTestFile("large.txt")
+
+	configuration := map[string]string{
+		"address":            "localhost:2222",
+		"hostKey":            hostKey,
+		"username":           "user",
+		"password":           "pass",
+		"directoryPath":      "/upload",
+		"filePattern":        "*.txt",
+		"fileChunkSizeBytes": "1024",
+	}
+
+	t.Run("success reading large file in chunks", func(t *testing.T) {
+		is := is.New(t)
+		s := &Source{}
+		ctx := context.Background()
+
+		err = s.Configure(ctx, configuration)
+		is.NoErr(err)
+
+		err = s.Open(ctx, nil)
+		is.NoErr(err)
+
+		// Read first chunk
+		record1, err := s.Read(ctx)
+		is.NoErr(err)
+
+		// Verify first chunk metadata
+		is.Equal(record1.Metadata["filename"], "large.txt")
+		is.Equal(record1.Metadata["is_chunked"], "true")
+		is.Equal(record1.Metadata["chunk_index"], "1")
+		expectedTotalChunks := len(largeContent) / 1024
+		if len(largeContent)%1024 != 0 {
+			expectedTotalChunks++
+		}
+		is.Equal(record1.Metadata["total_chunks"], fmt.Sprintf("%d", expectedTotalChunks))
+
+		// Read and verify middle chunk
+		record2, err := s.Read(ctx)
+		is.NoErr(err)
+		is.Equal(record2.Metadata["chunk_index"], "2")
+
+		// Read until last chunk
+		var lastRecord opencdc.Record
 		for {
-			record, err = s.Read(ctx)
+			record, err := s.Read(ctx)
 			if errors.Is(err, sdk.ErrBackoffRetry) {
 				break
 			}
-			if !errors.Is(err, sdk.ErrBackoffRetry) {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatal("Timeout waiting for record")
-			case <-time.After(100 * time.Millisecond):
-				// short wait before retrying
-				continue
-			}
+			is.NoErr(err)
+			lastRecord = record
 		}
-		is.Equal(err, sdk.ErrBackoffRetry)
-		is.Equal(record, opencdc.Record{})
+
+		is.Equal(lastRecord.Metadata["chunk_index"], lastRecord.Metadata["total_chunks"])
+
+		err = s.Teardown(ctx)
+		is.NoErr(err)
+	})
+
+	t.Run("resume from middle chunk", func(t *testing.T) {
+		is := is.New(t)
+		s := &Source{}
+		ctx := context.Background()
+
+		err = s.Configure(ctx, configuration)
+		is.NoErr(err)
+
+		pos := &Position{
+			LastProcessedFileTimestamp: stat.ModTime().UTC(),
+			ChunkInfo: &ChunkInfo{
+				Filename:    "large.txt",
+				ChunkIndex:  2,
+				ModTime:     stat.ModTime().UTC().Format(time.RFC3339),
+				TotalChunks: len(largeContent)/1024 + 1,
+			},
+		}
+		posBytes, err := json.Marshal(pos)
+		is.NoErr(err)
+
+		err = s.Open(ctx, opencdc.Position(posBytes))
+		is.NoErr(err)
+
+		record, err := s.Read(ctx)
+		is.NoErr(err)
+		is.Equal(record.Metadata["chunk_index"], "3")
+
+		err = s.Teardown(ctx)
+		is.NoErr(err)
+	})
+
+	t.Run("file modified during chunking", func(t *testing.T) {
+		is := is.New(t)
+		s := &Source{}
+		ctx := context.Background()
+
+		err = s.Configure(ctx, configuration)
+		is.NoErr(err)
+
+		err = s.Open(ctx, nil)
+		is.NoErr(err)
+
+		record1, err := s.Read(ctx)
+		is.NoErr(err)
+		is.Equal(record1.Metadata["chunk_index"], "1")
+
+		// Modify file between chunks
+		newContent := strings.Repeat("New file content\n", 1000)
+		_, err = writeTestFile("large.txt", newContent)
+		is.NoErr(err)
+
+		// Next read should detect modification and start over
+		record2, err := s.Read(ctx)
+		is.NoErr(err)
+		// Should start reading the modified file from beginning
+		is.Equal(record2.Metadata["chunk_index"], "1")
 
 		err = s.Teardown(ctx)
 		is.NoErr(err)
@@ -323,7 +468,48 @@ func setupHostKey() (string, error) {
 	return string(output), nil
 }
 
-func writeTestFile(name string, content string) error {
+func writeTestFile(name string, content string) (os.FileInfo, error) {
+	sshConfig := &ssh.ClientConfig{
+		User: "user",
+		Auth: []ssh.AuthMethod{
+			ssh.Password("pass"),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	sshClient, err := ssh.Dial("tcp", "localhost:2222", sshConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial SSH: %w", err)
+	}
+	defer sshClient.Close()
+
+	client, err := sftp.NewClient(sshClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SFTP client: %w", err)
+	}
+	defer client.Close()
+
+	remoteFilePath := fmt.Sprintf("/upload/%s", name)
+	remoteFile, err := client.Create(remoteFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file: %w", err)
+	}
+	defer remoteFile.Close()
+
+	stat, err := remoteFile.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	_, err = remoteFile.Write([]byte(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to write to file: %w", err)
+	}
+
+	return stat, nil
+}
+
+func removeTestFile(name string) error {
 	sshConfig := &ssh.ClientConfig{
 		User: "user",
 		Auth: []ssh.AuthMethod{
@@ -345,15 +531,9 @@ func writeTestFile(name string, content string) error {
 	defer client.Close()
 
 	remoteFilePath := fmt.Sprintf("/upload/%s", name)
-	remoteFile, err := client.Create(remoteFilePath)
+	err = client.Remove(remoteFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-	defer remoteFile.Close()
-
-	_, err = remoteFile.Write([]byte(content))
-	if err != nil {
-		return fmt.Errorf("failed to write to file: %w", err)
+		return fmt.Errorf("failed to remove file: %w", err)
 	}
 
 	return nil

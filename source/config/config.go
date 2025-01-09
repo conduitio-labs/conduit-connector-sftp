@@ -16,7 +16,6 @@ package config
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/config"
 )
@@ -28,8 +27,6 @@ type Config struct {
 
 	// Pattern to filter files in the source directory.
 	FilePattern string `json:"filePattern" default:"*"`
-	// This period is used by iterator to poll for new data at regular intervals.
-	PollingPeriod time.Duration `json:"pollingPeriod" default:"5s"`
 	// Maximum size of a file chunk in bytes to split large files, default is 3MB.
 	FileChunkSizeBytes int64 `json:"fileChunkSizeBytes" default:"3145728"`
 }

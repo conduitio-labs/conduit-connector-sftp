@@ -14,7 +14,6 @@ const (
 	ConfigFilePattern        = "filePattern"
 	ConfigHostKey            = "hostKey"
 	ConfigPassword           = "password"
-	ConfigPollingPeriod      = "pollingPeriod"
 	ConfigPrivateKeyPath     = "privateKeyPath"
 	ConfigUsername           = "username"
 )
@@ -61,12 +60,6 @@ func (Config) Parameters() map[string]config.Parameter {
 			Default:     "",
 			Description: "Password is the SFTP password (can be used as passphrase for private key).",
 			Type:        config.ParameterTypeString,
-			Validations: []config.Validation{},
-		},
-		ConfigPollingPeriod: {
-			Default:     "5s",
-			Description: "This period is used by iterator to poll for new data at regular intervals.",
-			Type:        config.ParameterTypeDuration,
 			Validations: []config.Validation{},
 		},
 		ConfigPrivateKeyPath: {

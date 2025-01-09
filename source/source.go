@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
 	commonsConfig "github.com/conduitio/conduit-commons/config"
@@ -28,11 +27,6 @@ import (
 	sdk "github.com/conduitio/conduit-connector-sdk"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
-)
-
-var (
-	ErrSourceNotOpened      = errors.New("source not opened for reading")
-	ErrRecordsChannelClosed = errors.New("error reading data, records channel closed unexpectedly")
 )
 
 type Source struct {
@@ -44,8 +38,7 @@ type Source struct {
 	sshClient  *ssh.Client
 	sftpClient *sftp.Client
 
-	ch chan opencdc.Record
-	wg *sync.WaitGroup
+	iterator *Iterator
 }
 
 // NewSource initialises a new source.
@@ -109,14 +102,7 @@ func (s *Source) Open(ctx context.Context, position opencdc.Position) error {
 		return err
 	}
 
-	s.ch = make(chan opencdc.Record)
-	s.wg = &sync.WaitGroup{}
-
-	s.wg.Add(1)
-	err = NewIterator(ctx, s.sshClient, s.sftpClient, s.position, s.config, s.ch, s.wg)
-	if err != nil {
-		return fmt.Errorf("creating iterator: %w", err)
-	}
+	s.iterator = NewIterator(s.sftpClient, s.position, s.config)
 
 	return nil
 }
@@ -124,21 +110,7 @@ func (s *Source) Open(ctx context.Context, position opencdc.Position) error {
 func (s *Source) Read(ctx context.Context) (opencdc.Record, error) {
 	sdk.Logger(ctx).Debug().Msg("Reading a record from SFTP Source...")
 
-	if s == nil || s.ch == nil {
-		return opencdc.Record{}, ErrSourceNotOpened
-	}
-
-	select {
-	case <-ctx.Done():
-		return opencdc.Record{}, ctx.Err()
-	case record, ok := <-s.ch:
-		if !ok {
-			return opencdc.Record{}, ErrRecordsChannelClosed
-		}
-		return record, nil //nolint:nlreturn // compact code style
-	default:
-		return opencdc.Record{}, sdk.ErrBackoffRetry
-	}
+	return s.iterator.Next(ctx)
 }
 
 func (s *Source) Ack(ctx context.Context, position opencdc.Position) error {
@@ -151,18 +123,6 @@ func (s *Source) Ack(ctx context.Context, position opencdc.Position) error {
 
 func (s *Source) Teardown(ctx context.Context) error {
 	sdk.Logger(ctx).Info().Msg("Tearing down the SFTP Source")
-
-	if s.wg != nil {
-		// wait for goroutines to finish
-		s.wg.Wait()
-	}
-
-	if s.ch != nil {
-		// close the read channel for write
-		close(s.ch)
-		// reset read channel to nil, to avoid reading buffered records
-		s.ch = nil
-	}
 
 	var errs []error
 	if s.sftpClient != nil {
