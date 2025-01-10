@@ -9,4 +9,4 @@ services:
     environment:
       - USER=user
       - PASS=pass
-    command: user:pass:::upload 
+    command: user:pass:::source,destination
