@@ -172,20 +172,9 @@ func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
 			return err
 		}
 
-		newPath := fmt.Sprintf("%s/%s", d.config.DirectoryPath, metaData.filename)
-
-		// check if file already exists then remove it before renaming
-		_, err = d.sftpClient.Stat(newPath)
-		if err == nil {
-			err = d.sftpClient.Remove(newPath)
-			if err != nil {
-				return fmt.Errorf("failed to remove remote file: %w", err)
-			}
-		}
-
-		err = d.sftpClient.Rename(path, newPath)
+		err = d.renameFile(path, fmt.Sprintf("%s/%s", d.config.DirectoryPath, metaData.filename))
 		if err != nil {
-			return fmt.Errorf("failed to rename remote file: %w", err)
+			return err
 		}
 	}
 
@@ -315,4 +304,22 @@ func (d *Destination) extractMetadata(record opencdc.Record) (metadata, error) {
 		filename:    filename,
 		filesize:    size,
 	}, nil
+}
+
+func (d *Destination) renameFile(path, newPath string) error {
+	// check if file already exists then remove it before renaming
+	_, err := d.sftpClient.Stat(newPath)
+	if err == nil {
+		err = d.sftpClient.Remove(newPath)
+		if err != nil {
+			return fmt.Errorf("failed to remove remote file: %w", err)
+		}
+	}
+
+	err = d.sftpClient.Rename(path, newPath)
+	if err != nil {
+		return fmt.Errorf("failed to rename remote file: %w", err)
+	}
+
+	return nil
 }

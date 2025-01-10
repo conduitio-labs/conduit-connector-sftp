@@ -15,7 +15,7 @@
 package common
 
 import (
-	"crypto/md5"
+	"crypto/md5" //nolint: gosec // MD5 used for non-cryptographic unique identifier
 	"encoding/hex"
 	"fmt"
 	"time"

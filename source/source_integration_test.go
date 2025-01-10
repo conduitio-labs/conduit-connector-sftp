@@ -184,7 +184,7 @@ func TestSource_Open(t *testing.T) {
 
 		err = s.Open(ctx, nil)
 		is.True(err != nil)
-		is.Equal(err.Error(), "failed to dial SSH: ssh: handshake failed: ssh: host key mismatch")
+		is.Equal(err.Error(), "failed to dial SSH: ssh: handshake failed: host key type mismatch: got ecdsa-sha2-nistp256, want ssh-rsa")
 	})
 
 	t.Run("source open error remote path not exist", func(t *testing.T) {

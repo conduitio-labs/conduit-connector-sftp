@@ -15,7 +15,7 @@
 package source
 
 import (
-	"context" //nolint: gosec // MD5 used for non-cryptographic unique identifier
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"

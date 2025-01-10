@@ -31,7 +31,7 @@ The connector supports both password and private key authentication methods.
 
 ## Destination
 
-Destination connects to a remote server. It takes an `opencdc.Record`, extracts filename from the metadata and upload the file to the remote server. The connector supports both password and private key authentication methods.
+Destination connects to a remote server. It takes an `opencdc.Record`, extracts filename from the metadata and upload the file to the remote server. The connector supports both password and private key authentication methods. The connector will sync only those files that are in the source directory itself.
 Destination also supports large file uploads. Source can provide large file content chunk by chunk (one record per chunk). Each record should have following in metadata:
 
 * `filename`: Filename of the file with extension.
