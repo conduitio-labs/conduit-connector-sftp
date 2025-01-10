@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conduitio-labs/conduit-connector-sftp/common"
 	"github.com/conduitio-labs/conduit-connector-sftp/config"
 	"github.com/conduitio-labs/conduit-connector-sftp/destination"
 	"github.com/conduitio/conduit-commons/opencdc"
@@ -44,7 +45,7 @@ func (d *driver) GenerateRecord(_ *testing.T, _ opencdc.Operation) opencdc.Recor
 			opencdc.MetadataCollection: "upload",
 			opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 			"filename":                 filename,
-			"hash":                     "55fa9e9cb76faa2e544668384538b19a",
+			"hash":                     common.GenerateFileHash(filename, time.Now(), 11),
 			"file_size":                fmt.Sprintf("%d", len(content)),
 			"mod_time":                 time.Now().UTC().Format(time.RFC3339),
 		},
@@ -77,7 +78,7 @@ func TestAcceptance(t *testing.T) {
 					config.ConfigHostKey:       hostKey,
 					config.ConfigUsername:      "user",
 					config.ConfigPassword:      "pass",
-					config.ConfigDirectoryPath: "/upload",
+					config.ConfigDirectoryPath: "/destination",
 				},
 			},
 		},

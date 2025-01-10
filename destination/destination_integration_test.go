@@ -100,7 +100,7 @@ func TestDestination_Open(t *testing.T) {
 			config.ConfigHostKey:       hostKey,
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/destination",
 		})
 		is.NoErr(err)
 
@@ -122,7 +122,7 @@ func TestDestination_Open(t *testing.T) {
 			config.ConfigHostKey:       "hostKey",
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/destination",
 		})
 		is.NoErr(err)
 
@@ -218,7 +218,7 @@ func TestDestination_Write(t *testing.T) {
 			config.ConfigHostKey:       hostKey,
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/destination",
 		})
 		is.NoErr(err)
 
@@ -261,7 +261,7 @@ func TestDestination_Write(t *testing.T) {
 			config.ConfigHostKey:       hostKey,
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/destination",
 		})
 		is.NoErr(err)
 
@@ -303,7 +303,7 @@ func TestDestination_Write(t *testing.T) {
 			config.ConfigHostKey:       hostKey,
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/destination",
 		})
 		is.NoErr(err)
 
@@ -346,7 +346,7 @@ func TestDestination_Write(t *testing.T) {
 			config.ConfigHostKey:       hostKey,
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/destination",
 		})
 		is.NoErr(err)
 

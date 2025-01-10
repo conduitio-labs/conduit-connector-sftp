@@ -15,9 +15,7 @@
 package source
 
 import (
-	"context"
-	"crypto/md5" //nolint: gosec // MD5 used for non-cryptographic unique identifier
-	"encoding/hex"
+	"context" //nolint: gosec // MD5 used for non-cryptographic unique identifier
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +27,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/conduitio-labs/conduit-connector-sftp/common"
 	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
@@ -325,13 +324,6 @@ func (iter *Iterator) createMetadata(fileInfo os.FileInfo, filePath string, cont
 		"source_path":              filePath,
 		"file_size":                fmt.Sprintf("%d", contentLength),
 		"mod_time":                 fileInfo.ModTime().UTC().Format(time.RFC3339),
-		"hash":                     generateFileHash(fileInfo.Name(), fileInfo.ModTime().UTC(), fileInfo.Size()),
+		"hash":                     common.GenerateFileHash(fileInfo.Name(), fileInfo.ModTime().UTC(), fileInfo.Size()),
 	}
-}
-
-// generateFileHash creates a unique hash based on file name, mod time, and size.
-func generateFileHash(fileName string, modTime time.Time, fileSize int64) string {
-	data := fmt.Sprintf("%s|%s|%d", fileName, modTime.Format(time.RFC3339), fileSize)
-	hash := md5.Sum([]byte(data)) //nolint: gosec // MD5 used for non-cryptographic unique identifier
-	return hex.EncodeToString(hash[:])
 }
