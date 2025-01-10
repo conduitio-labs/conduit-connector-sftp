@@ -17,6 +17,7 @@ package destination
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -106,8 +107,15 @@ func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, e
 
 		filename, ok := record.Metadata["filename"]
 		if !ok {
-			// this should never happen, record should always have the filename metadata.
-			filename = string(record.Key.Bytes())
+			structuredKey, err := d.structurizeData(record.Key)
+			if err != nil {
+				return i, err
+			}
+			name, ok := structuredKey["filename"].(string)
+			if !ok {
+				return i, fmt.Errorf("invalid filename")
+			}
+			filename = name
 		}
 
 		err := d.uploadFile(filename, record.Payload.After.Bytes())
@@ -183,8 +191,15 @@ func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
 	if index == totalChunks {
 		filename, ok := record.Metadata["filename"]
 		if !ok {
-			// this should never happen, record should always have the filename metadata.
-			filename = string(record.Key.Bytes())
+			structuredKey, err := d.structurizeData(record.Key)
+			if err != nil {
+				return err
+			}
+			name, ok := structuredKey["filename"].(string)
+			if !ok {
+				return fmt.Errorf("invalid filename")
+			}
+			filename = name
 		}
 
 		err = d.sftpClient.Rename(path, fmt.Sprintf("%s/%s", d.config.DirectoryPath, filename))
@@ -210,4 +225,17 @@ func (d *Destination) uploadFile(filename string, content []byte) error {
 	}
 
 	return nil
+}
+
+func (d *Destination) structurizeData(data opencdc.Data) (opencdc.StructuredData, error) {
+	if data == nil || len(data.Bytes()) == 0 {
+		return opencdc.StructuredData{}, nil
+	}
+
+	structuredData := make(opencdc.StructuredData)
+	if err := json.Unmarshal(data.Bytes(), &structuredData); err != nil {
+		return nil, fmt.Errorf("unmarshal data into structured data: %w", err)
+	}
+
+	return structuredData, nil
 }
