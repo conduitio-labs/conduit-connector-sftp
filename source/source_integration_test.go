@@ -107,7 +107,7 @@ func TestSource_Open(t *testing.T) {
 			config.ConfigHostKey:       hostKey,
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/source",
 		})
 		is.NoErr(err)
 
@@ -130,7 +130,7 @@ func TestSource_Open(t *testing.T) {
 			config.ConfigHostKey:       "hostKey",
 			config.ConfigUsername:      "user",
 			config.ConfigPassword:      "pass",
-			config.ConfigDirectoryPath: "/upload",
+			config.ConfigDirectoryPath: "/source",
 		})
 		is.NoErr(err)
 
@@ -154,7 +154,7 @@ func TestSource_Open(t *testing.T) {
 			config.ConfigHostKey:        hostKey,
 			config.ConfigUsername:       "user",
 			config.ConfigPrivateKeyPath: "privatekey",
-			config.ConfigDirectoryPath:  "/upload",
+			config.ConfigDirectoryPath:  "/source",
 		})
 		is.NoErr(err)
 
@@ -220,7 +220,7 @@ func TestSource_Read(t *testing.T) {
 		"hostKey":            hostKey,
 		"username":           "user",
 		"password":           "pass",
-		"directoryPath":      "/upload",
+		"directoryPath":      "/source",
 		"filePattern":        "*",
 		"fileChunkSizeBytes": "1024",
 	}
@@ -300,7 +300,7 @@ func TestSource_Read(t *testing.T) {
 			"hostKey":            hostKey,
 			"username":           "user",
 			"password":           "pass",
-			"directoryPath":      "/upload",
+			"directoryPath":      "/source",
 			"filePattern":        "*.csv",
 			"fileChunkSizeBytes": "1024",
 		})
@@ -337,7 +337,7 @@ func TestSource_ReadLargeFile(t *testing.T) {
 		"hostKey":            hostKey,
 		"username":           "user",
 		"password":           "pass",
-		"directoryPath":      "/upload",
+		"directoryPath":      "/source",
 		"filePattern":        "*.txt",
 		"fileChunkSizeBytes": "1024",
 	}
@@ -489,7 +489,7 @@ func writeTestFile(name string, content string) (os.FileInfo, error) {
 	}
 	defer client.Close()
 
-	remoteFilePath := fmt.Sprintf("/upload/%s", name)
+	remoteFilePath := fmt.Sprintf("/source/%s", name)
 	remoteFile, err := client.Create(remoteFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file: %w", err)
@@ -530,7 +530,7 @@ func removeTestFile(name string) error {
 	}
 	defer client.Close()
 
-	remoteFilePath := fmt.Sprintf("/upload/%s", name)
+	remoteFilePath := fmt.Sprintf("/source/%s", name)
 	err = client.Remove(remoteFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to remove file: %w", err)
