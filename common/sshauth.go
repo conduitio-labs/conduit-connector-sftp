@@ -41,7 +41,7 @@ func SSHConfigAuth(remoteHostKey, username, password, privateKeyPath string) (*s
 	//nolint:dogsled // not required here.
 	hostKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(remoteHostKey))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse server public key: %w", err)
+		return nil, fmt.Errorf("failed to parse host key: %w", err)
 	}
 
 	hostKeyCallback := func(_ string, _ net.Addr, key ssh.PublicKey) error {

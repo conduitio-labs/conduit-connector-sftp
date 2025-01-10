@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/conduitio-labs/conduit-connector-sftp/common"
 	"github.com/conduitio-labs/conduit-connector-sftp/config"
@@ -105,20 +106,7 @@ func (d *Destination) Write(_ context.Context, records []opencdc.Record) (int, e
 			continue
 		}
 
-		filename, ok := record.Metadata["filename"]
-		if !ok {
-			structuredKey, err := d.structurizeData(record.Key)
-			if err != nil {
-				return i, err
-			}
-			name, ok := structuredKey["filename"].(string)
-			if !ok {
-				return i, fmt.Errorf("invalid filename")
-			}
-			filename = name
-		}
-
-		err := d.uploadFile(filename, record.Payload.After.Bytes())
+		err := d.uploadFile(record)
 		if err != nil {
 			return i, err
 		}
@@ -151,25 +139,14 @@ func (d *Destination) Teardown(ctx context.Context) error {
 }
 
 func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
-	index, ok := record.Metadata["chunk_index"]
-	if !ok {
-		return NewInvalidChunkError("chunk_index not found")
-	}
-
-	totalChunks, ok := record.Metadata["total_chunks"]
-	if !ok {
-		return NewInvalidChunkError("total_chunk not found")
-	}
-
-	hash, ok := record.Metadata["hash"]
-	if !ok {
-		return NewInvalidChunkError("hash not found")
+	metaData, err := d.extractMetadata(record)
+	if err != nil {
+		return err
 	}
 
 	var remoteFile *sftp.File
-	var err error
-	path := fmt.Sprintf("%s/%s.tmp", d.config.DirectoryPath, hash)
-	if index == "1" {
+	path := fmt.Sprintf("%s/%s.tmp", d.config.DirectoryPath, metaData.hash)
+	if metaData.index == 1 {
 		remoteFile, err = d.sftpClient.Create(path)
 		if err != nil {
 			return fmt.Errorf("failed to create remote file: %w", err)
@@ -188,21 +165,25 @@ func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
 	}
 	remoteFile.Close()
 
-	if index == totalChunks {
-		filename, ok := record.Metadata["filename"]
-		if !ok {
-			structuredKey, err := d.structurizeData(record.Key)
-			if err != nil {
-				return err
-			}
-			name, ok := structuredKey["filename"].(string)
-			if !ok {
-				return fmt.Errorf("invalid filename")
-			}
-			filename = name
+	if metaData.index == metaData.totalChunks {
+		// compare the uploaded filesize with the source filesize to confirm successful upload
+		err = d.compareFileSize(path, metaData.filesize)
+		if err != nil {
+			return err
 		}
 
-		err = d.sftpClient.Rename(path, fmt.Sprintf("%s/%s", d.config.DirectoryPath, filename))
+		newPath := fmt.Sprintf("%s/%s", d.config.DirectoryPath, metaData.filename)
+
+		// check if file already exists then remove it before renaming
+		_, err = d.sftpClient.Stat(newPath)
+		if err == nil {
+			err = d.sftpClient.Remove(newPath)
+			if err != nil {
+				return fmt.Errorf("failed to remove remote file: %w", err)
+			}
+		}
+
+		err = d.sftpClient.Rename(path, newPath)
 		if err != nil {
 			return fmt.Errorf("failed to rename remote file: %w", err)
 		}
@@ -211,17 +192,29 @@ func (d *Destination) handleChunkedRecord(record opencdc.Record) error {
 	return nil
 }
 
-func (d *Destination) uploadFile(filename string, content []byte) error {
-	remoteFile, err := d.sftpClient.Create(fmt.Sprintf("%s/%s", d.config.DirectoryPath, filename))
+func (d *Destination) uploadFile(record opencdc.Record) error {
+	metaData, err := d.extractMetadata(record)
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("%s/%s", d.config.DirectoryPath, metaData.filename)
+	remoteFile, err := d.sftpClient.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create remote file: %w", err)
 	}
 	defer remoteFile.Close()
 
-	reader := bytes.NewReader(content)
+	reader := bytes.NewReader(record.Payload.After.Bytes())
 	_, err = reader.WriteTo(remoteFile)
 	if err != nil {
 		return fmt.Errorf("failed to write content to remote file: %w", err)
+	}
+
+	// compare the uploaded filesize with the source filesize to confirm successful upload
+	err = d.compareFileSize(path, metaData.filesize)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -238,4 +231,88 @@ func (d *Destination) structurizeData(data opencdc.Data) (opencdc.StructuredData
 	}
 
 	return structuredData, nil
+}
+
+func (d *Destination) compareFileSize(path string, size int64) error {
+	stat, err := d.sftpClient.Stat(path)
+	if err != nil {
+		return fmt.Errorf("failed to stat remote file: %w", err)
+	}
+
+	if stat.Size() != size {
+		return NewInvalidFileError(fmt.Sprintf("uploaded filesize(%v) is different than source filesize(%v)", stat.Size(), size))
+	}
+
+	return nil
+}
+
+type metadata struct {
+	index       int64
+	totalChunks int64
+	hash        string
+	filename    string
+	filesize    int64
+}
+
+func (d *Destination) extractMetadata(record opencdc.Record) (metadata, error) {
+	var index, total int64
+	chunked, ok := record.Metadata["is_chunked"]
+	if ok && chunked == "true" {
+		chunkIndex, ok := record.Metadata["chunk_index"]
+		if !ok {
+			return metadata{}, NewInvalidChunkError("chunk_index not found")
+		}
+
+		var err error
+		index, err = strconv.ParseInt(chunkIndex, 10, 64)
+		if err != nil {
+			return metadata{}, fmt.Errorf("failed to parse chunk_index: %w", err)
+		}
+
+		totalChunks, ok := record.Metadata["total_chunks"]
+		if !ok {
+			return metadata{}, NewInvalidChunkError("total_chunk not found")
+		}
+
+		total, err = strconv.ParseInt(totalChunks, 10, 64)
+		if err != nil {
+			return metadata{}, fmt.Errorf("failed to parse total_chunks: %w", err)
+		}
+	}
+
+	hash, ok := record.Metadata["hash"]
+	if !ok {
+		return metadata{}, NewInvalidChunkError("hash not found")
+	}
+
+	filename, ok := record.Metadata["filename"]
+	if !ok {
+		structuredKey, err := d.structurizeData(record.Key)
+		if err != nil {
+			return metadata{}, err
+		}
+		name, ok := structuredKey["filename"].(string)
+		if !ok {
+			return metadata{}, NewInvalidChunkError("invalid filename")
+		}
+		filename = name
+	}
+
+	fileSize, ok := record.Metadata["file_size"]
+	if !ok {
+		return metadata{}, NewInvalidChunkError("file_size not found")
+	}
+
+	size, err := strconv.ParseInt(fileSize, 10, 64)
+	if err != nil {
+		return metadata{}, fmt.Errorf("failed to parse file_size: %w", err)
+	}
+
+	return metadata{
+		index:       index,
+		totalChunks: total,
+		hash:        hash,
+		filename:    filename,
+		filesize:    size,
+	}, nil
 }

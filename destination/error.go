@@ -29,3 +29,15 @@ func (e InvalidChunkError) Error() string {
 func NewInvalidChunkError(msg string) InvalidChunkError {
 	return InvalidChunkError{msg}
 }
+
+type InvalidFileError struct {
+	message string
+}
+
+func (e InvalidFileError) Error() string {
+	return fmt.Sprintf("invalid file: %s", e.message)
+}
+
+func NewInvalidFileError(msg string) InvalidFileError {
+	return InvalidFileError{msg}
+}

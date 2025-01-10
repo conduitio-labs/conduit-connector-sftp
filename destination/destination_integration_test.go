@@ -128,7 +128,7 @@ func TestDestination_Open(t *testing.T) {
 
 		err = d.Open(ctx)
 		is.True(err != nil)
-		is.Equal(err.Error(), "failed to create SSH config: failed to parse server public key: ssh: no key found")
+		is.Equal(err.Error(), "failed to create SSH config: failed to parse host key: ssh: no key found")
 
 		d.Teardown(ctx)
 	})
@@ -207,6 +207,7 @@ func TestDestination_Write(t *testing.T) {
 		fmt.Println(err)
 		return
 	}
+
 	t.Run("destination write success", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()
@@ -234,6 +235,7 @@ func TestDestination_Write(t *testing.T) {
 					opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 					"filename":                 "example.txt",
 					"source_path":              "/upload",
+					"hash":                     "55fa9e9cb76faa2e544668384538b19a",
 					"file_size":                fmt.Sprintf("%d", len(content)),
 					"mod_time":                 time.Now().UTC().Format(time.RFC3339),
 				},
@@ -275,6 +277,7 @@ func TestDestination_Write(t *testing.T) {
 					opencdc.MetadataCollection: "upload",
 					opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 					"source_path":              "/upload",
+					"hash":                     "55fa9e9cb76faa2e544668384538b19a",
 					"file_size":                fmt.Sprintf("%d", len(content)),
 					"mod_time":                 time.Now().UTC().Format(time.RFC3339),
 				},
@@ -289,6 +292,7 @@ func TestDestination_Write(t *testing.T) {
 
 		d.Teardown(ctx)
 	})
+
 	t.Run("destination write failure", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()
@@ -316,6 +320,7 @@ func TestDestination_Write(t *testing.T) {
 					opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 					"filename":                 "",
 					"source_path":              "/upload",
+					"hash":                     "55fa9e9cb76faa2e544668384538b19a",
 					"file_size":                fmt.Sprintf("%d", len(content)),
 					"mod_time":                 time.Now().UTC().Format(time.RFC3339),
 				},
@@ -327,6 +332,65 @@ func TestDestination_Write(t *testing.T) {
 		_, err = d.Write(ctx, records)
 		is.True(err != nil)
 		is.Equal(err.Error(), `failed to create remote file: sftp: "Failure" (SSH_FX_FAILURE)`)
+
+		d.Teardown(ctx)
+	})
+
+	t.Run("destination large file upload", func(t *testing.T) {
+		is := is.New(t)
+		d := NewDestination()
+		ctx := context.Background()
+
+		err := d.Configure(ctx, map[string]string{
+			config.ConfigAddress:       "localhost:2222",
+			config.ConfigHostKey:       hostKey,
+			config.ConfigUsername:      "user",
+			config.ConfigPassword:      "pass",
+			config.ConfigDirectoryPath: "/upload",
+		})
+		is.NoErr(err)
+
+		err = d.Open(ctx)
+		is.NoErr(err)
+
+		records := []opencdc.Record{
+			sdk.Util.Source.NewRecordCreate(
+				nil,
+				map[string]string{
+					opencdc.MetadataCollection: "upload",
+					opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
+					"filename":                 "largefile.txt",
+					"chunk_index":              "1",
+					"total_chunks":             "2",
+					"is_chunked":               "true",
+					"hash":                     "55fa9e9cb76faa2e544668384538b19a",
+					"file_size":                "26",
+					"mod_time":                 time.Now().UTC().Format(time.RFC3339),
+				},
+				opencdc.StructuredData{"filename": "largefile.txt"},
+				opencdc.RawData([]byte(`Hello World!1`)),
+			),
+			sdk.Util.Source.NewRecordCreate(
+				nil,
+				map[string]string{
+					opencdc.MetadataCollection: "upload",
+					opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
+					"filename":                 "largefile.txt",
+					"chunk_index":              "2",
+					"total_chunks":             "2",
+					"is_chunked":               "true",
+					"hash":                     "55fa9e9cb76faa2e544668384538b19a",
+					"file_size":                "26",
+					"mod_time":                 time.Now().UTC().Format(time.RFC3339),
+				},
+				opencdc.StructuredData{"filename": "largefile.txt"},
+				opencdc.RawData([]byte(`Hello World!2`)),
+			),
+		}
+
+		n, err := d.Write(ctx, records)
+		is.NoErr(err)
+		is.Equal(n, len(records))
 
 		d.Teardown(ctx)
 	})

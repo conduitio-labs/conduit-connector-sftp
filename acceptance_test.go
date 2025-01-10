@@ -44,7 +44,7 @@ func (d *driver) GenerateRecord(_ *testing.T, _ opencdc.Operation) opencdc.Recor
 			opencdc.MetadataCollection: "upload",
 			opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 			"filename":                 filename,
-			"source_path":              "/upload",
+			"hash":                     "55fa9e9cb76faa2e544668384538b19a",
 			"file_size":                fmt.Sprintf("%d", len(content)),
 			"mod_time":                 time.Now().UTC().Format(time.RFC3339),
 		},
