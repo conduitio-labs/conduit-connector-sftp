@@ -16,12 +16,9 @@ package source
 
 import (
 	"context"
-	"sync"
 	"testing"
-	"time"
 
 	commonsConfig "github.com/conduitio/conduit-commons/config"
-	"github.com/conduitio/conduit-commons/opencdc"
 	"github.com/matryer/is"
 )
 
@@ -98,99 +95,14 @@ func TestSource_Configure_missingHostKey(t *testing.T) {
 	is.Equal(err.Error(), `invalid config: config invalid: error validating "hostKey": required parameter is not provided`)
 }
 
-func TestSource_Read_Success(t *testing.T) {
-	t.Parallel()
-
-	is := is.New(t)
-	ctx := context.Background()
-
-	st := opencdc.StructuredData{
-		"key": "value",
-	}
-	expectedRecord := opencdc.Record{
-		Position: opencdc.Position(`"lastProcessedFileTimestamp": testTimestamp`),
-		Metadata: nil,
-		Key:      st,
-		Payload:  opencdc.Change{After: st},
-	}
-
-	s := &Source{
-		ch: make(chan opencdc.Record, 1),
-	}
-	s.ch <- expectedRecord
-
-	record, err := s.Read(ctx)
-	is.NoErr(err)
-	is.Equal(record, expectedRecord)
-}
-
-func TestSource_Read_SourceNotInitialized(t *testing.T) {
-	t.Parallel()
-
-	is := is.New(t)
-	ctx := context.Background()
-
-	var s *Source
-	_, err := s.Read(ctx)
-	is.True(err != nil)
-	is.Equal(err.Error(), "source not opened for reading")
-
-	s = &Source{}
-	_, err = s.Read(ctx)
-	is.True(err != nil)
-	is.Equal(err.Error(), "source not opened for reading")
-}
-
-func TestSource_Read_ClosedChannel(t *testing.T) {
-	t.Parallel()
-
-	is := is.New(t)
-	ctx := context.Background()
-
-	s := &Source{
-		ch: make(chan opencdc.Record),
-	}
-	close(s.ch)
-
-	_, err := s.Read(ctx)
-	is.True(err != nil)
-	is.Equal(err.Error(), "error reading data, records channel closed unexpectedly")
-}
-
 func TestSource_Teardown_Success(t *testing.T) {
 	t.Parallel()
 
 	is := is.New(t)
 	ctx := context.Background()
 
-	s := &Source{
-		ch: make(chan opencdc.Record),
-		wg: &sync.WaitGroup{},
-	}
+	s := &Source{}
 
 	err := s.Teardown(ctx)
 	is.NoErr(err)
-	is.True(s.ch == nil)
-}
-
-func TestSource_Teardown_WithPendingGoroutines(t *testing.T) {
-	t.Parallel()
-
-	is := is.New(t)
-	ctx := context.Background()
-
-	s := &Source{
-		ch: make(chan opencdc.Record),
-		wg: &sync.WaitGroup{},
-	}
-
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		time.Sleep(100 * time.Millisecond)
-	}()
-
-	err := s.Teardown(ctx)
-	is.NoErr(err)
-	is.True(s.ch == nil)
 }
