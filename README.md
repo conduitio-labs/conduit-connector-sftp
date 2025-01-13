@@ -1,65 +1,36 @@
-# Conduit Connector Template
+# Conduit Connector SFTP
 
-This is a template project for building [Conduit](https://conduit.io) connectors in Go. It makes it possible to
-start working on a Conduit connector in a matter of seconds.
+The SFTP connector is one of [Conduit](https://github.com/ConduitIO/conduit) plugins. It
+provides both, a source and a destination SFTP connector.
 
-## Quick start
+## How to build it
 
-1. Click [_Use this template_](https://github.com/new?template_name=conduit-connector-template&template_owner=ConduitIO) and clone your new repository.
-2. Initialize the repository using [`setup.sh`](https://github.com/ConduitIO/conduit-connector-template/blob/main/setup.sh) and commit your changes.
-   ```sh
-   ./setup.sh github.com/myusername/conduit-connector-myconnector
-   git add -A
-   git commit -m "initialize repository"
-   ```
-3. Set up [automatic Dependabot PR merges](#automatically-merging-dependabot-prs).
+Run `make build`.
 
-With that, you're all set up and ready to start working on your connector! As a next step, we recommend that you 
-check out the [Conduit Connector SDK](https://github.com/ConduitIO/conduit-connector-sdk).
+## Testing
 
-## What's included?
+Run `make test` to run all the unit and integration tests.
 
-* Skeleton code for the connector's configuration, source and destination.
-* Example unit tests.
-* A [Makefile](/Makefile) with commonly used targets.
-* A [GitHub workflow](/.github/workflows/test.yml) to build the code and run the tests.
-* A [GitHub workflow](/.github/workflows/lint.yml) to run a pre-configured set of linters.
-* A [GitHub workflow](/.github/workflows/release.yml) which automatically creates a release when a tag is pushed.
-* A [Dependabot setup](/.github/dependabot.yml) which checks your dependencies for available updates and 
-[merges minor version upgrades](/.github/workflows/dependabot-auto-merge-go.yml) automatically.
-* [Issue](/.github/ISSUE_TEMPLATE) and [PR templates](/.github/pull_request_template.md).
-* A [README template](/README_TEMPLATE.md).
+## Source
 
-## Automatically merging Dependabot PRs
+The source SFTP connector monitors a directory on an SFTP server for files matching a specified pattern. It reads these files and converts them into `opencdc.Record` that can be processed by Conduit. For handling large files, it splits them into smaller chunks, enabling smooth data handling through the Conduit pipeline.
+The connector supports both password and private key authentication methods.
 
-> [!NOTE]
-> This applies only to public connector repositories, as branch protection rules are not enforced in private repositories.
+### Configuration Options
 
-The template makes it simple to keep your connector up-to-date using automatic merging of
-[Dependabot](https://github.com/dependabot) PRs. To make use of this setup, you need to adjust
-some repository settings.
+| name           | description                                                                                           | required | default value |
+| -------------- | ----------------------------------------------------------------------------------------------------- | -------- | -------- |
+| `address` | Address is the address of the sftp server to connect.| **true** |  |
+| `hostKey` | HostKey is the key used for host key callback validation.| **true** |  |
+| `username`| User is the username of the SFTP user. | **true** |  |
+| `password`| Password is the SFTP password (can be used as passphrase for private key). | false |  |
+| `privateKeyPath`| PrivateKeyPath is the private key for ssh login.| false |  |
+| `directoryPath` | DirectoryPath is the path to the directory to read data. | **true** |  |
+| `filePattern` | Pattern to match files that should be read (e.g., "*.txt") | false | `*` |
+| `fileChunkSizeBytes` | Maximum size of a file chunk in bytes to split large files. | false | `3145728` |
 
-1. Navigate to Settings -> General and allow auto-merge of PRs.
+## Destination
 
-   ![Allow auto-merge](https://github.com/ConduitIO/conduit-connector-template/assets/8320753/695b15f0-85b4-49cb-966d-649e9bf03455)
+### Configuration Options
 
-2. Navigate to Settings -> Branches and add a branch protection rule.
-
-   ![Add branch protection rule](https://github.com/ConduitIO/conduit-connector-template/assets/8320753/9f5a07bc-d141-42b9-9918-e8d9cc648482)
-
-3. Create a rule for branch `main` that requires status checks `build` and `golangci-lint`.
-
-   ![Status checks](https://github.com/ConduitIO/conduit-connector-template/assets/8320753/96219185-c329-432a-8623-9b4462015f32)
-
-## Recommended repository settings
-
-- Allow squash merging only.
-- Always suggest updating pull request branches.
-- Automatically delete head branches.
-- Branch protection rules on branch `main` (only in public repositories):
-  - Require a pull request before merging.
-  - Require approvals.
-  - Require status checks `build` and `golangci-lint`.
-  - Require branches to be up to date before merging.
-  - Require conversation resolution before merging.
-  - Do not allow bypassing the above settings.
+![scarf pixel](https://static.scarf.sh/a.png?x-pxid=64b333ae-77ad-4895-a5cd-a73bb14362d9)
