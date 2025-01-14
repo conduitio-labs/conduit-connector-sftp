@@ -293,6 +293,48 @@ func TestDestination_Write(t *testing.T) {
 		d.Teardown(ctx)
 	})
 
+	t.Run("destination write success filename from rawdata key", func(t *testing.T) {
+		is := is.New(t)
+		d := NewDestination()
+		ctx := context.Background()
+
+		err := d.Configure(ctx, map[string]string{
+			config.ConfigAddress:       "localhost:2222",
+			config.ConfigHostKey:       hostKey,
+			config.ConfigUsername:      "user",
+			config.ConfigPassword:      "pass",
+			config.ConfigDirectoryPath: "/destination",
+		})
+		is.NoErr(err)
+
+		err = d.Open(ctx)
+		is.NoErr(err)
+
+		content := []byte(`Hello World!`)
+
+		records := []opencdc.Record{
+			sdk.Util.Source.NewRecordCreate(
+				nil,
+				map[string]string{
+					opencdc.MetadataCollection: "upload",
+					opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
+					"source_path":              "/upload",
+					"hash":                     "55fa9e9cb76faa2e544668384538b19a",
+					"file_size":                fmt.Sprintf("%d", len(content)),
+					"mod_time":                 time.Now().UTC().Format(time.RFC3339),
+				},
+				opencdc.RawData([]byte("example.txt")),
+				opencdc.RawData(content),
+			),
+		}
+
+		n, err := d.Write(ctx, records)
+		is.NoErr(err)
+		is.Equal(n, len(records))
+
+		d.Teardown(ctx)
+	})
+
 	t.Run("destination write failure", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()

@@ -278,20 +278,20 @@ func (d *Destination) extractMetadata(record opencdc.Record) (metadata, error) {
 	if !ok {
 		structuredKey, err := d.structurizeData(record.Key)
 		if err != nil {
-			return metadata{}, err
+			filename = string(record.Key.Bytes())
+		} else {
+			name, ok := structuredKey["filename"].(string)
+			if !ok {
+				return metadata{}, NewInvalidChunkError("invalid filename")
+			}
+			filename = name
 		}
-		name, ok := structuredKey["filename"].(string)
-		if !ok {
-			return metadata{}, NewInvalidChunkError("invalid filename")
-		}
-		filename = name
 	}
 
 	fileSize, ok := record.Metadata["file_size"]
 	if !ok {
 		return metadata{}, NewInvalidChunkError("file_size not found")
 	}
-
 	size, err := strconv.ParseInt(fileSize, 10, 64)
 	if err != nil {
 		return metadata{}, fmt.Errorf("failed to parse file_size: %w", err)

@@ -181,7 +181,7 @@ func (iter *Iterator) readFileContent(ctx context.Context, file *sftp.File, stat
 	}
 
 	result.content = content
-	result.metadata = iter.createMetadata(stat, filePath, len(content))
+	result.metadata = iter.createMetadata(stat, filePath, stat.Size())
 
 	return result, nil
 }
@@ -223,7 +223,7 @@ func (iter *Iterator) readLargeFileChunk(ctx context.Context, file *sftp.File, s
 
 	result.content = chunk
 
-	result.metadata = iter.createMetadata(stat, filePath, len(chunk))
+	result.metadata = iter.createMetadata(stat, filePath, stat.Size())
 	result.metadata["chunk_index"] = fmt.Sprintf("%d", result.chunkIndex)
 	result.metadata["total_chunks"] = fmt.Sprintf("%d", result.totalChunks)
 	result.metadata["is_chunked"] = "true"
@@ -316,13 +316,13 @@ func (iter *Iterator) validateFile(ctx context.Context, fileInfo os.FileInfo, fi
 	return nil
 }
 
-func (iter *Iterator) createMetadata(fileInfo os.FileInfo, filePath string, contentLength int) opencdc.Metadata {
+func (iter *Iterator) createMetadata(fileInfo os.FileInfo, filePath string, filesize int64) opencdc.Metadata {
 	return opencdc.Metadata{
 		opencdc.MetadataCollection: iter.config.DirectoryPath,
 		opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 		"filename":                 fileInfo.Name(),
 		"source_path":              filePath,
-		"file_size":                fmt.Sprintf("%d", contentLength),
+		"file_size":                fmt.Sprintf("%d", filesize),
 		"mod_time":                 fileInfo.ModTime().UTC().Format(time.RFC3339),
 		"hash":                     common.GenerateFileHash(fileInfo.Name(), fileInfo.ModTime().UTC(), fileInfo.Size()),
 	}
