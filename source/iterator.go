@@ -137,7 +137,7 @@ func (iter *Iterator) processFile(ctx context.Context, fileInfo fileInfo) (openc
 	return sdk.Util.Source.NewRecordCreate(
 		positionBytes,
 		result.metadata,
-		opencdc.StructuredData{"filename": fileInfo.name},
+		opencdc.RawData([]byte(fileInfo.name)),
 		opencdc.RawData(result.content),
 	), nil
 }
