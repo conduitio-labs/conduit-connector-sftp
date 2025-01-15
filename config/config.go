@@ -16,7 +16,9 @@
 
 package config
 
-import "fmt"
+import (
+	"fmt"
+)
 
 var ErrEmptyAuthFields = fmt.Errorf("both %q and %q can not be empty", ConfigPassword, ConfigPrivateKeyPath)
 
@@ -26,7 +28,7 @@ type Config struct {
 	Address string `json:"address" validate:"required"`
 	// HostKey is the key used for host key callback validation.
 	HostKey string `json:"hostKey" validate:"required"`
-	// User is the SFTP user.
+	// User is the username of the SFTP user.
 	Username string `json:"username" validate:"required"`
 	// Password is the SFTP password (can be used as passphrase for private key).
 	Password string `json:"password"`

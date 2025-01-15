@@ -12,17 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sftp
+package destination
 
 import (
-	"github.com/conduitio-labs/conduit-connector-sftp/destination"
-	source "github.com/conduitio-labs/conduit-connector-sftp/source"
-	sdk "github.com/conduitio/conduit-connector-sdk"
+	"fmt"
 )
 
-// Connector combines all constructors for each plugin in one struct.
-var Connector = sdk.Connector{
-	NewSpecification: Specification,
-	NewDestination:   destination.NewDestination,
-	NewSource:        source.NewSource,
+type InvalidChunkError struct {
+	message string
+}
+
+func (e InvalidChunkError) Error() string {
+	return fmt.Sprintf("invalid chunk: %s", e.message)
+}
+
+func NewInvalidChunkError(msg string) InvalidChunkError {
+	return InvalidChunkError{msg}
+}
+
+type InvalidFileError struct {
+	message string
+}
+
+func (e InvalidFileError) Error() string {
+	return fmt.Sprintf("invalid file: %s", e.message)
+}
+
+func NewInvalidFileError(msg string) InvalidFileError {
+	return InvalidFileError{msg}
 }

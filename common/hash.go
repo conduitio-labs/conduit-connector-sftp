@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sftp
+package common
 
 import (
-	"github.com/conduitio-labs/conduit-connector-sftp/destination"
-	source "github.com/conduitio-labs/conduit-connector-sftp/source"
-	sdk "github.com/conduitio/conduit-connector-sdk"
+	"crypto/md5" //nolint: gosec // MD5 used for non-cryptographic unique identifier
+	"encoding/hex"
+	"fmt"
+	"time"
 )
 
-// Connector combines all constructors for each plugin in one struct.
-var Connector = sdk.Connector{
-	NewSpecification: Specification,
-	NewDestination:   destination.NewDestination,
-	NewSource:        source.NewSource,
+// GenerateFileHash creates a unique hash based on file name, mod time, and size.
+func GenerateFileHash(fileName string, modTime time.Time, fileSize int64) string {
+	data := fmt.Sprintf("%s|%s|%d", fileName, modTime.Format(time.RFC3339), fileSize)
+	hash := md5.Sum([]byte(data)) //nolint: gosec // MD5 used for non-cryptographic unique identifier
+	return hex.EncodeToString(hash[:])
 }

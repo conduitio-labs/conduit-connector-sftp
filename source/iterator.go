@@ -16,8 +16,6 @@ package source
 
 import (
 	"context"
-	"crypto/md5" //nolint: gosec // MD5 used for non-cryptographic unique identifier
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +27,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/conduitio-labs/conduit-connector-sftp/common"
 	"github.com/conduitio-labs/conduit-connector-sftp/source/config"
 	"github.com/conduitio/conduit-commons/opencdc"
 	sdk "github.com/conduitio/conduit-connector-sdk"
@@ -138,7 +137,7 @@ func (iter *Iterator) processFile(ctx context.Context, fileInfo fileInfo) (openc
 	return sdk.Util.Source.NewRecordCreate(
 		positionBytes,
 		result.metadata,
-		opencdc.StructuredData{"filename": fileInfo.name},
+		opencdc.RawData([]byte(fileInfo.name)),
 		opencdc.RawData(result.content),
 	), nil
 }
@@ -182,7 +181,7 @@ func (iter *Iterator) readFileContent(ctx context.Context, file *sftp.File, stat
 	}
 
 	result.content = content
-	result.metadata = iter.createMetadata(stat, filePath, len(content))
+	result.metadata = iter.createMetadata(stat, filePath, stat.Size())
 
 	return result, nil
 }
@@ -224,7 +223,7 @@ func (iter *Iterator) readLargeFileChunk(ctx context.Context, file *sftp.File, s
 
 	result.content = chunk
 
-	result.metadata = iter.createMetadata(stat, filePath, len(chunk))
+	result.metadata = iter.createMetadata(stat, filePath, stat.Size())
 	result.metadata["chunk_index"] = fmt.Sprintf("%d", result.chunkIndex)
 	result.metadata["total_chunks"] = fmt.Sprintf("%d", result.totalChunks)
 	result.metadata["is_chunked"] = "true"
@@ -317,21 +316,14 @@ func (iter *Iterator) validateFile(ctx context.Context, fileInfo os.FileInfo, fi
 	return nil
 }
 
-func (iter *Iterator) createMetadata(fileInfo os.FileInfo, filePath string, contentLength int) opencdc.Metadata {
+func (iter *Iterator) createMetadata(fileInfo os.FileInfo, filePath string, filesize int64) opencdc.Metadata {
 	return opencdc.Metadata{
 		opencdc.MetadataCollection: iter.config.DirectoryPath,
 		opencdc.MetadataCreatedAt:  time.Now().UTC().Format(time.RFC3339),
 		"filename":                 fileInfo.Name(),
 		"source_path":              filePath,
-		"file_size":                fmt.Sprintf("%d", contentLength),
+		"file_size":                fmt.Sprintf("%d", filesize),
 		"mod_time":                 fileInfo.ModTime().UTC().Format(time.RFC3339),
-		"hash":                     generateFileHash(fileInfo.Name(), fileInfo.ModTime().UTC(), fileInfo.Size()),
+		"hash":                     common.GenerateFileHash(fileInfo.Name(), fileInfo.ModTime().UTC(), fileInfo.Size()),
 	}
-}
-
-// generateFileHash creates a unique hash based on file name, mod time, and size.
-func generateFileHash(fileName string, modTime time.Time, fileSize int64) string {
-	data := fmt.Sprintf("%s|%s|%d", fileName, modTime.Format(time.RFC3339), fileSize)
-	hash := md5.Sum([]byte(data)) //nolint: gosec // MD5 used for non-cryptographic unique identifier
-	return hex.EncodeToString(hash[:])
 }
