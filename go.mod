@@ -8,7 +8,7 @@ require (
 	github.com/golangci/golangci-lint v1.63.4
 	github.com/matryer/is v1.4.1
 	github.com/pkg/sftp v1.13.7
-	golang.org/x/crypto v0.32.0
+	golang.org/x/crypto v0.33.0
 	mvdan.cc/gofumpt v0.7.0
 )
 
@@ -220,9 +220,9 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20241108190413-2d47ceb2692f // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/net v0.34.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.11.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/tools v0.29.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241202173237-19429a94021a // indirect
