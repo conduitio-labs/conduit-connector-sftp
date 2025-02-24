@@ -8,7 +8,7 @@ require (
 	github.com/golangci/golangci-lint v1.64.5
 	github.com/matryer/is v1.4.1
 	github.com/pkg/sftp v1.13.7
-	golang.org/x/crypto v0.33.0
+	golang.org/x/crypto v0.35.0
 	mvdan.cc/gofumpt v0.7.0
 )
 
