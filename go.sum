@@ -82,6 +82,8 @@ github.com/conduitio/conduit-commons v0.5.1 h1:o6Lh3LhBuorDfVVlWyj3tYoYbBUUPTMiJ
 github.com/conduitio/conduit-commons v0.5.1/go.mod h1:FmJI9zOxX+HDiqculivPmekaUASZdubOJnI8sOOLAXk=
 github.com/conduitio/conduit-connector-protocol v0.9.1 h1:NhazVIoJOOuX+9xAiL3WZ0r3T6UAMwLkPD8h6lWMND4=
 github.com/conduitio/conduit-connector-protocol v0.9.1/go.mod h1:S3Rar9si3GJUolwtFhO2CL3DpuWmJxzce4W+Psi/8zQ=
+github.com/conduitio/conduit-connector-sdk v0.12.0 h1:WD/ZQhEAJMkvkq0KIyVCGeU8ni2ASMyPpBbAWZQ+lKo=
+github.com/conduitio/conduit-connector-sdk v0.12.0/go.mod h1:keZ4eZ4q+7GFEz+Q8G97wvPrrdnBoxh+Bmxl9P9pZW0=
 github.com/conduitio/conduit-connector-sdk v0.13.2 h1:6bs98jNawrm5bM2FcyVzCJA6s6VZxsxf5O9FKJ9ivDo=
 github.com/conduitio/conduit-connector-sdk v0.13.2/go.mod h1:2DAkGawNJ2wFLkrzylwy43JJkRdGQ4loGVvZfZWnnx0=
 github.com/conduitio/evolviconf v0.1.0 h1:rcG+hs6tlrYlX9qomOQJz+K+OnDhbMbioGx3ci55yo0=
