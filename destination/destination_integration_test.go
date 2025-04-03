@@ -15,7 +15,6 @@
 package destination
 
 import (
-	"context"
 	"fmt"
 	"os/exec"
 	"testing"
@@ -35,7 +34,7 @@ func TestDestination_Configure(t *testing.T) {
 
 		d := NewDestination()
 
-		err := d.Configure(context.Background(), map[string]string{
+		err := d.Configure(t.Context(), map[string]string{
 			config.ConfigAddress:       "locahost:22",
 			config.ConfigHostKey:       "host-key",
 			config.ConfigUsername:      "root",
@@ -50,7 +49,7 @@ func TestDestination_Configure(t *testing.T) {
 
 		d := NewDestination()
 
-		err := d.Configure(context.Background(), map[string]string{
+		err := d.Configure(t.Context(), map[string]string{
 			config.ConfigHostKey:       "host-key",
 			config.ConfigUsername:      "root",
 			config.ConfigPassword:      "root",
@@ -66,7 +65,7 @@ func TestDestination_Configure(t *testing.T) {
 
 		d := NewDestination()
 
-		err := d.Configure(context.Background(), map[string]string{
+		err := d.Configure(t.Context(), map[string]string{
 			config.ConfigAddress:       "locahost:22",
 			config.ConfigHostKey:       "host-key",
 			config.ConfigUsername:      "root",
@@ -93,7 +92,7 @@ func TestDestination_Open(t *testing.T) {
 
 		d := NewDestination()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -115,7 +114,7 @@ func TestDestination_Open(t *testing.T) {
 
 		d := NewDestination()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -138,7 +137,7 @@ func TestDestination_Open(t *testing.T) {
 
 		d := NewDestination()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:        "localhost:2222",
@@ -161,7 +160,7 @@ func TestDestination_Open(t *testing.T) {
 
 		d := NewDestination()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:22",
@@ -182,7 +181,7 @@ func TestDestination_Open(t *testing.T) {
 
 		d := NewDestination()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -211,7 +210,7 @@ func TestDestination_Write(t *testing.T) {
 	t.Run("destination write success", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -254,7 +253,7 @@ func TestDestination_Write(t *testing.T) {
 	t.Run("destination write success filename from key", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -296,7 +295,7 @@ func TestDestination_Write(t *testing.T) {
 	t.Run("destination write success filename from rawdata key", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -338,7 +337,7 @@ func TestDestination_Write(t *testing.T) {
 	t.Run("destination write failure", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -381,7 +380,7 @@ func TestDestination_Write(t *testing.T) {
 	t.Run("destination large file upload", func(t *testing.T) {
 		is := is.New(t)
 		d := NewDestination()
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := d.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -441,7 +440,7 @@ func TestDestination_Write(t *testing.T) {
 func TestTeardown_NoOpen(t *testing.T) {
 	is := is.New(t)
 	con := NewDestination()
-	err := con.Teardown(context.Background())
+	err := con.Teardown(t.Context())
 	is.NoErr(err)
 }
 

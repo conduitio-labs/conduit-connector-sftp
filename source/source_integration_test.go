@@ -41,7 +41,7 @@ func TestSource_Configure(t *testing.T) {
 
 		s := NewSource()
 
-		err := s.Configure(context.Background(), map[string]string{
+		err := s.Configure(t.Context(), map[string]string{
 			config.ConfigAddress:       "locahost:22",
 			config.ConfigHostKey:       "host-key",
 			config.ConfigUsername:      "root",
@@ -56,7 +56,7 @@ func TestSource_Configure(t *testing.T) {
 
 		s := NewSource()
 
-		err := s.Configure(context.Background(), map[string]string{
+		err := s.Configure(t.Context(), map[string]string{
 			config.ConfigHostKey:       "host-key",
 			config.ConfigUsername:      "root",
 			config.ConfigPassword:      "root",
@@ -72,7 +72,7 @@ func TestSource_Configure(t *testing.T) {
 
 		s := NewSource()
 
-		err := s.Configure(context.Background(), map[string]string{
+		err := s.Configure(t.Context(), map[string]string{
 			config.ConfigAddress:       "locahost:22",
 			config.ConfigHostKey:       "host-key",
 			config.ConfigUsername:      "root",
@@ -99,7 +99,7 @@ func TestSource_Open(t *testing.T) {
 
 		s := NewSource()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		err = s.Configure(ctx, map[string]string{
@@ -123,7 +123,7 @@ func TestSource_Open(t *testing.T) {
 
 		s := NewSource()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err := s.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -147,7 +147,7 @@ func TestSource_Open(t *testing.T) {
 
 		s := NewSource()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err = s.Configure(ctx, map[string]string{
 			config.ConfigAddress:        "localhost:2222",
@@ -171,7 +171,7 @@ func TestSource_Open(t *testing.T) {
 
 		s := NewSource()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err = s.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:22",
@@ -192,7 +192,7 @@ func TestSource_Open(t *testing.T) {
 
 		s := NewSource()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err = s.Configure(ctx, map[string]string{
 			config.ConfigAddress:       "localhost:2222",
@@ -234,7 +234,7 @@ func TestSource_Read(t *testing.T) {
 		}
 
 		s := &Source{}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		err = s.Configure(ctx, configuration)
@@ -268,7 +268,7 @@ func TestSource_Read(t *testing.T) {
 	t.Run("no new files available", func(t *testing.T) {
 		is := is.New(t)
 		s := &Source{}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err = s.Configure(ctx, configuration)
 		is.NoErr(err)
@@ -287,7 +287,7 @@ func TestSource_Read(t *testing.T) {
 	t.Run("file pattern filtering", func(t *testing.T) {
 		is := is.New(t)
 		s := &Source{}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// Create additional test files with different extensions
 		_, err = writeTestFile("test.csv", "1,2,3")
@@ -345,7 +345,7 @@ func TestSource_ReadLargeFile(t *testing.T) {
 	t.Run("success reading large file in chunks", func(t *testing.T) {
 		is := is.New(t)
 		s := &Source{}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err = s.Configure(ctx, configuration)
 		is.NoErr(err)
@@ -392,7 +392,7 @@ func TestSource_ReadLargeFile(t *testing.T) {
 	t.Run("resume from middle chunk", func(t *testing.T) {
 		is := is.New(t)
 		s := &Source{}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err = s.Configure(ctx, configuration)
 		is.NoErr(err)
@@ -423,7 +423,7 @@ func TestSource_ReadLargeFile(t *testing.T) {
 	t.Run("file modified during chunking", func(t *testing.T) {
 		is := is.New(t)
 		s := &Source{}
-		ctx := context.Background()
+		ctx := t.Context()
 
 		err = s.Configure(ctx, configuration)
 		is.NoErr(err)
@@ -454,7 +454,7 @@ func TestSource_ReadLargeFile(t *testing.T) {
 func TestTeardown_NoOpen(t *testing.T) {
 	is := is.New(t)
 	con := NewSource()
-	err := con.Teardown(context.Background())
+	err := con.Teardown(t.Context())
 	is.NoErr(err)
 }
 
