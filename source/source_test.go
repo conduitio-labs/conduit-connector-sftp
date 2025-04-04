@@ -15,7 +15,6 @@
 package source
 
 import (
-	"context"
 	"testing"
 
 	commonsConfig "github.com/conduitio/conduit-commons/config"
@@ -34,7 +33,7 @@ func TestSource_Configure_allFieldsSuccess(t *testing.T) {
 	t.Parallel()
 
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := Source{}
 
@@ -63,7 +62,7 @@ func TestSource_Configure_missingAuthentication(t *testing.T) {
 	t.Parallel()
 
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := Source{}
 
@@ -81,7 +80,7 @@ func TestSource_Configure_missingHostKey(t *testing.T) {
 	t.Parallel()
 
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := Source{}
 
@@ -99,7 +98,7 @@ func TestSource_Teardown_Success(t *testing.T) {
 	t.Parallel()
 
 	is := is.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	s := &Source{}
 
